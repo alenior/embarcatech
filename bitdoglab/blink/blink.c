@@ -57,7 +57,7 @@ int main()
     {
 
         pico_set_led(true);
-        printf("LED ACESSO\n");
+        printf("LED ACESO\n");
         sleep_ms(LED_DELAY_MS);
 
         pico_set_led(false);

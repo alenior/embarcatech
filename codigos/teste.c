@@ -5,9 +5,9 @@ int main()
     char nome[50];
 
     printf("Informe seu nome: ");
-    fgets(nome, sizeof(nome), stdin);
+    scanf("%s", nome);
 
-    printf("Olá, %s!", nome);
+    printf("Olah, %s!", nome);
 
     return 0;
 }
