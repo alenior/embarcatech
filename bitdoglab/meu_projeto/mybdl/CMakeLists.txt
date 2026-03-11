@@ -35,7 +35,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(mybdl mybdl.c )
+add_executable(mybdl mybdl.c ssd1306.c)
 
 pico_set_program_name(mybdl "mybdl")
 pico_set_program_version(mybdl "0.1")
@@ -46,7 +46,10 @@ pico_enable_stdio_usb(mybdl 1)
 
 # Add the standard library to the build
 target_link_libraries(mybdl
-        pico_stdlib)
+        pico_stdlib
+        pico_cyw43_arch_lwip_threadsafe_background
+        hardware_i2c
+)
 
 # Add the standard include files to the build
 target_include_directories(mybdl PRIVATE
@@ -54,9 +57,7 @@ target_include_directories(mybdl PRIVATE
 )
 
 # Add any user requested libraries
-target_link_libraries(mybdl 
-        pico_cyw43_arch_none
-        )
+target_link_libraries(mybdl)
 
 pico_add_extra_outputs(mybdl)
 

@@ -1,12 +1,16 @@
-#include <stdio.h>           // Biblioteca padrão da linguagem C
-#include "pico/stdlib.h"     // Biblioteca fundamental do SDK do Pico
-#include "pico/cyw43_arch.h" // Biblioteca que controla o chip Wi-Fi CYW43439 presente na Pico W
+#include <stdio.h>
+#include "pico/stdlib.h"
+#include "pico/cyw43_arch.h"
+#include "hardware/i2c.h"
+#include <string.h>
 
-#define I2C_0_SDA 0 // Livre para periférico(s) na I2C_0
-#define I2C_0_SCL 1 // Livre para periférico(s) na I2C_0
+#include "ssd1306.h"
 
-#define I2C_1_SDA 2 // Livre para periférico(s) na I2C_1
-#define I2C_1_SCL 3 // Livre para periférico(s) na I2C_1
+#define I2C_0_SDA 0
+#define I2C_0_SCL 1
+
+#define I2C_1_SDA 2
+#define I2C_1_SCL 3
 
 #define MICROFONE 28
 
@@ -17,7 +21,7 @@
 #define JOYSTICK_Y 27
 #define JOYSTICK_BT 22
 
-#define MATRIZ_DE_LEDS 7 // Neopixel WS2018B
+#define MATRIZ_DE_LEDS 7
 
 #define LED_RGB_R 13
 #define LED_RGB_G 11
@@ -29,24 +33,113 @@
 #define BOTAO_A 5
 #define BOTAO_B 6
 
+#define WIFI_TIMEOUT_MS 30000
+
+char ssid[32];
+char password[64];
+
+void oled_status(char *l1, char *l2, char *l3)
+{
+    ssd1306_clear();
+    ssd1306_draw_string(0, 0, l1);
+    ssd1306_draw_string(0, 16, l2);
+    ssd1306_draw_string(0, 32, l3);
+    ssd1306_show();
+}
+
 int main()
 {
-    stdio_init_all(); // Essa função inicializa todos os canais de saída padrão disponíveis, como USB e UART, permitindo que o programa use printf para enviar mensagens para o console.
-    sleep_ms(2000);   // Isso dá tempo para o PC detectar a porta USB e abrir o console antes que o programa comece a enviar mensagens.
-
-    // Initialise the Wi-Fi chip
-    if (cyw43_arch_init()) // Essa função inicializa o chip CYW43439. Ela retorna 0 em caso de sucesso e um valor diferente de zero em caso de falha. Se a inicialização falhar, o programa imprime uma mensagem de erro e retorna -1 para indicar que ocorreu um erro.
+    stdio_init_all();
+    // espera até 5 segundos pelo monitor serial
+    for (int i = 0; i < 50; i++)
     {
-        printf("Wi-Fi init failed\n");
+        if (stdio_usb_connected())
+            break;
+
+        sleep_ms(100);
+    }
+
+    printf("USB conectado\n");
+    printf("Sistema iniciando\n");
+
+    // I2C para OLED
+    i2c_init(i2c1, 400000);
+
+    gpio_set_function(OLED_SDA, GPIO_FUNC_I2C);
+    gpio_set_function(OLED_SCL, GPIO_FUNC_I2C);
+
+    gpio_pull_up(OLED_SDA);
+    gpio_pull_up(OLED_SCL);
+
+    // Inicializa display
+    ssd1306_init();
+    ssd1306_clear();
+
+    oled_status("Bem vindo", "Iniciando", "Informe wifi");
+    ssd1306_update();
+    sleep_ms(1000);
+
+    printf("Inicializando WiFi...\n");
+    sleep_ms(1000);
+
+    if (cyw43_arch_init())
+    {
+        printf("WiFi init failed\n");
         return -1;
     }
 
-    // Example to turn on the Pico W LED
-    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1); // Essa linha liga o LED da placa Pico W. A função cyw43_arch_gpio_put é usada para controlar os pinos GPIO do chip Wi-Fi. O primeiro argumento é o número do pino (CYW43_WL_GPIO_LED_PIN é uma constante que representa o pino do LED), e o segundo argumento é o valor a ser definido (1 para ligar o LED, 0 para desligar).
+    cyw43_arch_enable_sta_mode();
 
-    while (true) // Esse é um loop infinito que mantém o programa em execução.
+    oled_status("WiFi:", "Desconectado", "");
+    ssd1306_update();
+    sleep_ms(1000);
+
+    printf("\n=== CONFIGURACAO WIFI ===\n");
+    sleep_ms(500);
+
+    oled_status("WiFi", "Digite SSID", "e senha");
+    printf("Digite SSID \n");
+    fflush(stdout);
+    fgets(ssid, sizeof(ssid), stdin);
+    ssid[strcspn(ssid, "\r\n")] = 0;
+    printf("SSID recebido: %s\n", ssid);
+
+    printf("Digite senha \n");
+    fflush(stdout);
+    fgets(password, sizeof(password), stdin);
+    password[strcspn(password, "\r\n")] = 0;
+    printf("Senha recebida: %s\n", password);
+
+    oled_status("WiFi:", "Conectando...", ssid);
+    ssd1306_update();
+    sleep_ms(1000);
+
+    printf("Conectando em %s...\n", ssid);
+
+    int result = cyw43_arch_wifi_connect_timeout_ms(
+        ssid,
+        password,
+        CYW43_AUTH_WPA2_AES_PSK,
+        WIFI_TIMEOUT_MS);
+
+    if (result == 0)
     {
-        printf("Hello, world!\n");
-        sleep_ms(1000);
+        oled_status("WiFi conectado", "Rede:", ssid);
+        ssd1306_update();
+        printf("Conectado!\n");
+    }
+    else
+    {
+        oled_status("WiFi", "Falha", "Não conectado");
+        ssd1306_update();
+        printf("Falha na conexao\n");
+    }
+
+    printf("Resultado da conexao: %d\n", result);
+
+    while (true)
+    {
+        printf("Sistema ativo\n");
+        sleep_ms(5000);
     }
 }
