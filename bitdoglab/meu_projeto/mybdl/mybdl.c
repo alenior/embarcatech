@@ -1,68 +1,403 @@
 #include <stdio.h>
+#include <string.h>
+
 #include "pico/stdlib.h"
 #include "pico/cyw43_arch.h"
 #include "hardware/i2c.h"
-#include <string.h>
+#include "hardware/adc.h"
+#include "hardware/gpio.h"
 
 #include "ssd1306.h"
 
-#define I2C_0_SDA 0
-#define I2C_0_SCL 1
-
-#define I2C_1_SDA 2
-#define I2C_1_SCL 3
-
-#define MICROFONE 28
-
-#define OLED_SCL 15
 #define OLED_SDA 14
+#define OLED_SCL 15
 
-#define JOYSTICK_X 26
-#define JOYSTICK_Y 27
-#define JOYSTICK_BT 22
-
-#define MATRIZ_DE_LEDS 7
-
-#define LED_RGB_R 13
-#define LED_RGB_G 11
-#define LED_RGB_B 12
-
-#define BUZZER1 21
-#define BUZZER2 10
+#define JOY_X 26
+#define JOY_Y 27
+#define JOY_BTN 22
 
 #define BOTAO_A 5
-#define BOTAO_B 6
 
 #define WIFI_TIMEOUT_MS 30000
+#define MAX_NETWORKS 20
 
-char ssid[32];
+#define JOY_CENTER 2048
+#define JOY_DEAD 600
+
+volatile bool wifi_scan_complete = false;
+typedef enum
+{
+    STATE_SCAN,
+    STATE_LIST,
+    STATE_PASSWORD,
+    STATE_CONNECTING,
+    STATE_CONNECTED,
+    STATE_ERROR
+
+} app_state_t;
+
+typedef struct
+{
+    char ssid[33];
+    int rssi;
+
+} wifi_network_t;
+
+wifi_network_t networks[MAX_NETWORKS];
+int network_count = 0;
+
+int selected_network = 0;
+int scroll_offset = 0;
+
 char password[64];
+int pass_len = 0;
 
-void oled_status(char *l1, char *l2, char *l3)
+const char keyboard[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "abcdefghijklmnopqrstuvwxyz"
+    "0123456789";
+
+int key_index = 0;
+
+app_state_t state = STATE_SCAN;
+
+void oled_clear()
 {
     ssd1306_clear();
-    ssd1306_draw_string(0, 0, l1);
-    ssd1306_draw_string(0, 16, l2);
-    ssd1306_draw_string(0, 32, l3);
+}
+
+void oled_show()
+{
     ssd1306_show();
+}
+
+void draw_center(char *text, int y)
+{
+    ssd1306_draw_string(0, y, text);
+}
+
+bool ssid_exists(char *ssid)
+{
+    for (int i = 0; i < network_count; i++)
+    {
+        if (strcmp(networks[i].ssid, ssid) == 0)
+            return true;
+    }
+    return false;
+}
+
+static int scan_callback(void *env, const cyw43_ev_scan_result_t *result)
+{
+    if (!result)
+        return 0;
+
+    char ssid[33];
+
+    memcpy(ssid, result->ssid, result->ssid_len);
+    ssid[result->ssid_len] = '\0';
+
+    if (ssid_exists(ssid))
+        return 0;
+
+    if (network_count >= MAX_NETWORKS)
+    {
+        wifi_scan_complete = true;
+        return 0;
+    }
+
+    strcpy(networks[network_count].ssid, ssid);
+    networks[network_count].rssi = result->rssi;
+
+    printf("Rede: %s RSSI:%d\n",
+           networks[network_count].ssid,
+           networks[network_count].rssi);
+
+    network_count++;
+
+    return 0;
+}
+
+void sort_networks()
+{
+    for (int i = 0; i < network_count - 1; i++)
+    {
+        for (int j = i + 1; j < network_count; j++)
+        {
+            if (networks[j].rssi > networks[i].rssi)
+            {
+                wifi_network_t tmp = networks[i];
+                networks[i] = networks[j];
+                networks[j] = tmp;
+            }
+        }
+    }
+}
+
+void scan_wifi()
+{
+    printf("Scan iniciado\n");
+    network_count = 0;
+    wifi_scan_complete = false;
+
+    cyw43_wifi_scan_options_t scan_options = {0};
+
+    oled_clear();
+    draw_center("Escaneando", 0);
+    draw_center("redes WiFi...", 16);
+    oled_show();
+
+    int err = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL, scan_callback);
+
+    if (err != 0)
+    {
+        oled_clear();
+        draw_center("Erro scan WiFi", 0);
+        oled_show();
+        sleep_ms(2000);
+
+        state = STATE_ERROR;
+        return;
+    }
+
+    absolute_time_t timeout = make_timeout_time_ms(5000);
+
+    while (!wifi_scan_complete)
+    {
+        sleep_ms(10);
+
+        if (absolute_time_diff_us(get_absolute_time(), timeout) < 0)
+        {
+            printf("Scan finalizado por timeout\n");
+            wifi_scan_complete = true;
+        }
+    }
+
+    if (network_count == 0)
+    {
+        oled_clear();
+        draw_center("Nenhuma rede", 0);
+        oled_show();
+        sleep_ms(2000);
+
+        state = STATE_SCAN;
+        return;
+    }
+
+    selected_network = 0;
+    scroll_offset = 0;
+    state = STATE_LIST;
+
+    sort_networks();
+}
+
+void draw_networks()
+{
+    oled_clear();
+
+    for (int i = 0; i < 4; i++)
+    {
+        int idx = scroll_offset + i;
+
+        if (idx >= network_count)
+            break;
+
+        char line[32];
+
+        sprintf(line, "%c %.10s %d",
+                idx == selected_network ? '>' : ' ',
+                networks[idx].ssid,
+                networks[idx].rssi);
+
+        ssd1306_draw_string(0, i * 16, line);
+    }
+
+    oled_show();
+}
+
+int joystick_vertical()
+{
+    adc_select_input(0);
+    int y = adc_read();
+
+    if (y > JOY_CENTER + JOY_DEAD)
+        return -1;
+
+    if (y < JOY_CENTER - JOY_DEAD)
+        return 1;
+
+    return 0;
+}
+
+bool joystick_pressed()
+{
+    return !gpio_get(JOY_BTN);
+}
+
+bool buttonA_pressed()
+{
+    return !gpio_get(BOTAO_A);
+}
+
+void handle_network_menu()
+{
+    draw_networks();
+
+    int dir = joystick_vertical();
+
+    if (dir == 1 && selected_network < network_count - 1)
+    {
+        selected_network++;
+
+        if (selected_network >= scroll_offset + 4)
+            scroll_offset++;
+
+        sleep_ms(180);
+    }
+
+    if (dir == -1 && selected_network > 0)
+    {
+        selected_network--;
+
+        if (selected_network < scroll_offset)
+            scroll_offset--;
+
+        sleep_ms(180);
+    }
+
+    if (joystick_pressed())
+    {
+        sleep_ms(300);
+        state = STATE_PASSWORD;
+    }
+}
+
+void draw_password_screen()
+{
+    oled_clear();
+
+    ssd1306_draw_string(0, 0, "Senha:");
+
+    ssd1306_draw_string(0, 16, password);
+
+    char line[32];
+
+    sprintf(line, "[%c]", keyboard[key_index]);
+
+    ssd1306_draw_string(0, 32, line);
+
+    ssd1306_draw_string(0, 48, "A=OK  Joy=Add");
+
+    oled_show();
+}
+
+int joystick_horizontal()
+{
+    adc_select_input(1);
+    int x = adc_read();
+
+    if (x > JOY_CENTER + JOY_DEAD)
+        return 1;
+
+    if (x < JOY_CENTER - JOY_DEAD)
+        return -1;
+
+    return 0;
+}
+
+void handle_password()
+{
+    draw_password_screen();
+
+    int dir = joystick_horizontal();
+
+    if (dir == 1 && key_index < strlen(keyboard) - 1)
+    {
+        key_index++;
+        sleep_ms(150);
+    }
+
+    if (dir == -1 && key_index > 0)
+    {
+        key_index--;
+        sleep_ms(150);
+    }
+
+    if (joystick_pressed())
+    {
+        if (pass_len < 63)
+        {
+            password[pass_len++] = keyboard[key_index];
+            password[pass_len] = 0;
+        }
+
+        sleep_ms(200);
+    }
+
+    if (buttonA_pressed())
+    {
+        sleep_ms(300);
+        state = STATE_CONNECTING;
+    }
+}
+
+void connect_wifi()
+{
+    oled_clear();
+    ssd1306_draw_string(0, 0, "Conectando...");
+    ssd1306_draw_string(0, 16, networks[selected_network].ssid);
+    oled_show();
+
+    int result = cyw43_arch_wifi_connect_timeout_ms(
+        networks[selected_network].ssid,
+        password,
+        CYW43_AUTH_WPA2_AES_PSK,
+        WIFI_TIMEOUT_MS);
+
+    if (result == 0)
+        state = STATE_CONNECTED;
+    else
+        state = STATE_ERROR;
+}
+
+void screen_connected()
+{
+    oled_clear();
+
+    ssd1306_draw_string(0, 0, "WiFi conectado");
+
+    ssd1306_draw_string(0, 16, networks[selected_network].ssid);
+
+    oled_show();
+}
+
+void screen_error()
+{
+    oled_clear();
+
+    ssd1306_draw_string(0, 0, "Falha WiFi");
+
+    ssd1306_draw_string(0, 16, "tente novamente");
+
+    oled_show();
 }
 
 int main()
 {
     stdio_init_all();
-    // espera até 5 segundos pelo monitor serial
-    for (int i = 0; i < 50; i++)
-    {
-        if (stdio_usb_connected())
-            break;
 
-        sleep_ms(100);
-    }
+    adc_init();
 
-    printf("USB conectado\n");
-    printf("Sistema iniciando\n");
+    adc_gpio_init(JOY_X);
+    adc_gpio_init(JOY_Y);
 
-    // I2C para OLED
+    gpio_init(JOY_BTN);
+    gpio_set_dir(JOY_BTN, false);
+    gpio_pull_up(JOY_BTN);
+
+    gpio_init(BOTAO_A);
+    gpio_set_dir(BOTAO_A, false);
+    gpio_pull_up(BOTAO_A);
+
     i2c_init(i2c1, 400000);
 
     gpio_set_function(OLED_SDA, GPIO_FUNC_I2C);
@@ -71,75 +406,56 @@ int main()
     gpio_pull_up(OLED_SDA);
     gpio_pull_up(OLED_SCL);
 
-    // Inicializa display
     ssd1306_init();
-    ssd1306_clear();
 
-    oled_status("Bem vindo", "Iniciando", "Informe wifi");
-    ssd1306_update();
-    sleep_ms(1000);
+    oled_clear();
 
-    printf("Inicializando WiFi...\n");
+    ssd1306_draw_string(0, 0, "BitDogLab");
+
+    ssd1306_draw_string(0, 16, "Inicializando");
+
+    oled_show();
+
     sleep_ms(1000);
 
     if (cyw43_arch_init())
-    {
-        printf("WiFi init failed\n");
         return -1;
-    }
 
     cyw43_arch_enable_sta_mode();
-
-    oled_status("WiFi:", "Desconectado", "");
-    ssd1306_update();
     sleep_ms(1000);
 
-    printf("\n=== CONFIGURACAO WIFI ===\n");
-    sleep_ms(500);
-
-    oled_status("WiFi", "Digite SSID", "e senha");
-    printf("Digite SSID \n");
-    fflush(stdout);
-    fgets(ssid, sizeof(ssid), stdin);
-    ssid[strcspn(ssid, "\r\n")] = 0;
-    printf("SSID recebido: %s\n", ssid);
-
-    printf("Digite senha \n");
-    fflush(stdout);
-    fgets(password, sizeof(password), stdin);
-    password[strcspn(password, "\r\n")] = 0;
-    printf("Senha recebida: %s\n", password);
-
-    oled_status("WiFi:", "Conectando...", ssid);
-    ssd1306_update();
-    sleep_ms(1000);
-
-    printf("Conectando em %s...\n", ssid);
-
-    int result = cyw43_arch_wifi_connect_timeout_ms(
-        ssid,
-        password,
-        CYW43_AUTH_WPA2_AES_PSK,
-        WIFI_TIMEOUT_MS);
-
-    if (result == 0)
-    {
-        oled_status("WiFi conectado", "Rede:", ssid);
-        ssd1306_update();
-        printf("Conectado!\n");
-    }
-    else
-    {
-        oled_status("WiFi", "Falha", "Não conectado");
-        ssd1306_update();
-        printf("Falha na conexao\n");
-    }
-
-    printf("Resultado da conexao: %d\n", result);
+    cyw43_arch_lwip_begin();
+    cyw43_arch_lwip_end();
 
     while (true)
     {
-        printf("Sistema ativo\n");
-        sleep_ms(5000);
+        switch (state)
+        {
+        case STATE_SCAN:
+            scan_wifi();
+            break;
+
+        case STATE_LIST:
+            handle_network_menu();
+            break;
+
+        case STATE_PASSWORD:
+            handle_password();
+            break;
+
+        case STATE_CONNECTING:
+            connect_wifi();
+            break;
+
+        case STATE_CONNECTED:
+            screen_connected();
+            break;
+
+        case STATE_ERROR:
+            screen_error();
+            break;
+        }
+
+        sleep_ms(50);
     }
 }
