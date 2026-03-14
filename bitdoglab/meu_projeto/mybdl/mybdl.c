@@ -190,6 +190,33 @@ void scan_wifi()
     sort_networks();
 }
 
+int rssi_to_bars(int rssi)
+{
+    if (rssi > -55)
+        return 4;
+    if (rssi > -65)
+        return 3;
+    if (rssi > -75)
+        return 2;
+    if (rssi > -85)
+        return 1;
+    return 0;
+}
+
+void draw_signal_bars(int x, int y, int bars)
+{
+    for (int i = 0; i < bars; i++)
+    {
+        int h = (i + 1) * 3;
+
+        for (int j = 0; j < h; j++)
+        {
+            ssd1306_draw_pixel(x + i * 3, y - j);
+            ssd1306_draw_pixel(x + i * 3 + 1, y - j);
+        }
+    }
+}
+
 void draw_networks()
 {
     oled_clear();
@@ -201,15 +228,24 @@ void draw_networks()
         if (idx >= network_count)
             break;
 
-        char line[32];
+        char line[20];
 
-        sprintf(line, "%c %.10s %d",
+        sprintf(line, "%c %.9s",
                 idx == selected_network ? '>' : ' ',
-                networks[idx].ssid,
-                networks[idx].rssi);
+                networks[idx].ssid);
 
         ssd1306_draw_string(0, i * 16, line);
+
+        int bars = rssi_to_bars(networks[idx].rssi);
+
+        draw_signal_bars(88, (i * 16) + 12, bars);
     }
+
+    char info[16];
+
+    sprintf(info, "%d/%d", selected_network + 1, network_count);
+
+    ssd1306_draw_string(110, 0, info);
 
     oled_show();
 }
@@ -244,12 +280,21 @@ void handle_network_menu()
 
     int dir = joystick_vertical();
 
+    int visible_lines = 4;
+    int max_scroll = network_count - visible_lines;
+
+    if (max_scroll < 0)
+        max_scroll = 0;
+
     if (dir == 1 && selected_network < network_count - 1)
     {
         selected_network++;
 
-        if (selected_network >= scroll_offset + 4)
+        if (selected_network >= scroll_offset + visible_lines &&
+            scroll_offset < max_scroll)
+        {
             scroll_offset++;
+        }
 
         sleep_ms(180);
     }
@@ -259,7 +304,9 @@ void handle_network_menu()
         selected_network--;
 
         if (selected_network < scroll_offset)
+        {
             scroll_offset--;
+        }
 
         sleep_ms(180);
     }
