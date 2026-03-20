@@ -24,7 +24,11 @@
 #define JOY_CENTER 2048
 #define JOY_DEAD 600
 
+#define KB_ROWS 6
+#define KB_COLS 8
+
 volatile bool wifi_scan_complete = false;
+
 typedef enum
 {
     STATE_SCAN,
@@ -44,22 +48,42 @@ typedef struct
 } wifi_network_t;
 
 wifi_network_t networks[MAX_NETWORKS];
-int network_count = 0;
 
+int network_count = 0;
 int selected_network = 0;
 int scroll_offset = 0;
 
 char password[64];
 int pass_len = 0;
 
-const char keyboard[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    "abcdefghijklmnopqrstuvwxyz"
-    "0123456789";
-
-int key_index = 0;
-
 app_state_t state = STATE_SCAN;
+
+/* ====================== TECLADO 2D ====================== */
+
+const char keyboard[KB_ROWS][KB_COLS] =
+    {
+        {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'},
+        {'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'},
+        {'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'},
+        {'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f'},
+        {'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'},
+        {'o', 'p', 'q', 'r', 's', 't', 'u', 'v'}};
+
+const char keyboard2[KB_ROWS][KB_COLS] =
+    {
+        {'w', 'x', 'y', 'z', '0', '1', '2', '3'},
+        {'4', '5', '6', '7', '8', '9', '*', '#'},
+        {'&', '!', '%', '?', '-', '+', '_', '<'},
+        {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
+        {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
+        {' ', ' ', ' ', ' ', ' ', ' ', ' ', 'O'} // O = OK
+};
+
+int key_row = 0;
+int key_col = 0;
+bool keyboard_page = false;
+
+/* ====================== OLED ====================== */
 
 void oled_clear()
 {
@@ -71,18 +95,14 @@ void oled_show()
     ssd1306_show();
 }
 
-void draw_center(char *text, int y)
-{
-    ssd1306_draw_string(0, y, text);
-}
+/* ====================== WIFI ====================== */
 
 bool ssid_exists(char *ssid)
 {
     for (int i = 0; i < network_count; i++)
-    {
         if (strcmp(networks[i].ssid, ssid) == 0)
             return true;
-    }
+
     return false;
 }
 
@@ -94,7 +114,7 @@ static int scan_callback(void *env, const cyw43_ev_scan_result_t *result)
     char ssid[33];
 
     memcpy(ssid, result->ssid, result->ssid_len);
-    ssid[result->ssid_len] = '\0';
+    ssid[result->ssid_len] = 0;
 
     if (ssid_exists(ssid))
         return 0;
@@ -108,10 +128,6 @@ static int scan_callback(void *env, const cyw43_ev_scan_result_t *result)
     strcpy(networks[network_count].ssid, ssid);
     networks[network_count].rssi = result->rssi;
 
-    printf("Rede: %s RSSI:%d\n",
-           networks[network_count].ssid,
-           networks[network_count].rssi);
-
     network_count++;
 
     return 0;
@@ -120,7 +136,6 @@ static int scan_callback(void *env, const cyw43_ev_scan_result_t *result)
 void sort_networks()
 {
     for (int i = 0; i < network_count - 1; i++)
-    {
         for (int j = i + 1; j < network_count; j++)
         {
             if (networks[j].rssi > networks[i].rssi)
@@ -130,34 +145,21 @@ void sort_networks()
                 networks[j] = tmp;
             }
         }
-    }
 }
 
 void scan_wifi()
 {
-    printf("Scan iniciado\n");
     network_count = 0;
     wifi_scan_complete = false;
 
     cyw43_wifi_scan_options_t scan_options = {0};
 
     oled_clear();
-    draw_center("Escaneando", 0);
-    draw_center("redes WiFi...", 16);
+    ssd1306_draw_string(0, 0, "Escaneando");
+    ssd1306_draw_string(0, 16, "redes WiFi");
     oled_show();
 
-    int err = cyw43_wifi_scan(&cyw43_state, &scan_options, NULL, scan_callback);
-
-    if (err != 0)
-    {
-        oled_clear();
-        draw_center("Erro scan WiFi", 0);
-        oled_show();
-        sleep_ms(2000);
-
-        state = STATE_ERROR;
-        return;
-    }
+    cyw43_wifi_scan(&cyw43_state, &scan_options, NULL, scan_callback);
 
     absolute_time_t timeout = make_timeout_time_ms(5000);
 
@@ -166,29 +168,24 @@ void scan_wifi()
         sleep_ms(10);
 
         if (absolute_time_diff_us(get_absolute_time(), timeout) < 0)
-        {
-            printf("Scan finalizado por timeout\n");
             wifi_scan_complete = true;
-        }
     }
 
     if (network_count == 0)
     {
-        oled_clear();
-        draw_center("Nenhuma rede", 0);
-        oled_show();
-        sleep_ms(2000);
-
         state = STATE_SCAN;
         return;
     }
 
+    sort_networks();
+
     selected_network = 0;
     scroll_offset = 0;
-    state = STATE_LIST;
 
-    sort_networks();
+    state = STATE_LIST;
 }
+
+/* ====================== RSSI ====================== */
 
 int rssi_to_bars(int rssi)
 {
@@ -216,6 +213,8 @@ void draw_signal_bars(int x, int y, int bars)
         }
     }
 }
+
+/* ====================== MENU REDES ====================== */
 
 void draw_networks()
 {
@@ -250,6 +249,8 @@ void draw_networks()
     oled_show();
 }
 
+/* ====================== JOYSTICK ====================== */
+
 int joystick_vertical()
 {
     adc_select_input(0);
@@ -257,9 +258,21 @@ int joystick_vertical()
 
     if (y > JOY_CENTER + JOY_DEAD)
         return -1;
-
     if (y < JOY_CENTER - JOY_DEAD)
         return 1;
+
+    return 0;
+}
+
+int joystick_horizontal()
+{
+    adc_select_input(1);
+    int x = adc_read();
+
+    if (x > JOY_CENTER + JOY_DEAD)
+        return 1;
+    if (x < JOY_CENTER - JOY_DEAD)
+        return -1;
 
     return 0;
 }
@@ -318,74 +331,100 @@ void handle_network_menu()
     }
 }
 
+/* ====================== SENHA ====================== */
+
 void draw_password_screen()
 {
     oled_clear();
 
     ssd1306_draw_string(0, 0, "Senha:");
 
-    ssd1306_draw_string(0, 16, password);
+    char masked[64];
 
-    char line[32];
+    for (int i = 0; i < pass_len; i++)
+        masked[i] = '*';
+    masked[pass_len] = 0;
 
-    sprintf(line, "[%c]", keyboard[key_index]);
+    ssd1306_draw_string(0, 12, masked);
 
-    ssd1306_draw_string(0, 32, line);
+    const char (*kb)[KB_COLS] = keyboard_page ? keyboard2 : keyboard;
 
-    ssd1306_draw_string(0, 48, "A=OK  Joy=Add");
+    for (int r = 0; r < 3; r++)
+        for (int c = 0; c < 8; c++)
+        {
+            char buf[4];
+
+            char k = kb[r][c];
+
+            if (r == key_row && c == key_col)
+                sprintf(buf, "[%c]", k);
+            else
+                sprintf(buf, " %c ", k);
+
+            ssd1306_draw_string(c * 16, r * 16 + 24, buf);
+        }
 
     oled_show();
-}
-
-int joystick_horizontal()
-{
-    adc_select_input(1);
-    int x = adc_read();
-
-    if (x > JOY_CENTER + JOY_DEAD)
-        return 1;
-
-    if (x < JOY_CENTER - JOY_DEAD)
-        return -1;
-
-    return 0;
 }
 
 void handle_password()
 {
     draw_password_screen();
 
-    int dir = joystick_horizontal();
+    int dx = joystick_horizontal();
+    int dy = joystick_vertical();
 
-    if (dir == 1 && key_index < strlen(keyboard) - 1)
-    {
-        key_index++;
-        sleep_ms(150);
-    }
+    key_col += dx;
+    key_row += dy;
 
-    if (dir == -1 && key_index > 0)
-    {
-        key_index--;
-        sleep_ms(150);
-    }
+    if (key_col < 0)
+        key_col = 0;
+    if (key_col >= KB_COLS)
+        key_col = KB_COLS - 1;
+
+    if (key_row < 0)
+        key_row = 0;
+    if (key_row >= 3)
+        key_row = 2;
+
+    const char (*kb)[KB_COLS] = keyboard_page ? keyboard2 : keyboard;
+
+    char key = kb[key_row][key_col];
 
     if (joystick_pressed())
     {
-        if (pass_len < 63)
-        {
-            password[pass_len++] = keyboard[key_index];
-            password[pass_len] = 0;
-        }
-
         sleep_ms(200);
+
+        if (key == '<')
+        {
+            if (pass_len > 0)
+            {
+                pass_len--;
+                password[pass_len] = 0;
+            }
+        }
+        else if (key == 'O')
+        {
+            state = STATE_CONNECTING;
+        }
+        else
+        {
+            if (pass_len < 63)
+            {
+                password[pass_len++] = key;
+                password[pass_len] = 0;
+            }
+        }
     }
 
     if (buttonA_pressed())
     {
-        sleep_ms(300);
-        state = STATE_CONNECTING;
+        keyboard_page = !keyboard_page;
+        sleep_ms(250);
     }
 }
+
+/* ====================== WIFI ====================== */
 
 void connect_wifi()
 {
@@ -409,24 +448,20 @@ void connect_wifi()
 void screen_connected()
 {
     oled_clear();
-
     ssd1306_draw_string(0, 0, "WiFi conectado");
-
     ssd1306_draw_string(0, 16, networks[selected_network].ssid);
-
     oled_show();
 }
 
 void screen_error()
 {
     oled_clear();
-
     ssd1306_draw_string(0, 0, "Falha WiFi");
-
     ssd1306_draw_string(0, 16, "tente novamente");
-
     oled_show();
 }
+
+/* ====================== MAIN ====================== */
 
 int main()
 {
@@ -456,11 +491,8 @@ int main()
     ssd1306_init();
 
     oled_clear();
-
     ssd1306_draw_string(0, 0, "BitDogLab");
-
     ssd1306_draw_string(0, 16, "Inicializando");
-
     oled_show();
 
     sleep_ms(1000);
@@ -469,10 +501,6 @@ int main()
         return -1;
 
     cyw43_arch_enable_sta_mode();
-    sleep_ms(1000);
-
-    cyw43_arch_lwip_begin();
-    cyw43_arch_lwip_end();
 
     while (true)
     {
@@ -481,23 +509,18 @@ int main()
         case STATE_SCAN:
             scan_wifi();
             break;
-
         case STATE_LIST:
             handle_network_menu();
             break;
-
         case STATE_PASSWORD:
             handle_password();
             break;
-
         case STATE_CONNECTING:
             connect_wifi();
             break;
-
         case STATE_CONNECTED:
             screen_connected();
             break;
-
         case STATE_ERROR:
             screen_error();
             break;
