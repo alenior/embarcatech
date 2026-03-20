@@ -23,6 +23,7 @@
 
 #define JOY_CENTER 2048
 #define JOY_DEAD 600
+#define MOVE_DELAY_MS 180
 
 #define KB_ROWS 6
 #define KB_COLS 8
@@ -60,24 +61,21 @@ app_state_t state = STATE_SCAN;
 
 /* ====================== TECLADO 2D ====================== */
 
-const char keyboard[KB_ROWS][KB_COLS] =
-    {
-        {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'},
-        {'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'},
-        {'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'},
-        {'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f'},
-        {'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'},
-        {'o', 'p', 'q', 'r', 's', 't', 'u', 'v'}};
+const char keyboard1[KB_ROWS][KB_COLS] = {
+    {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'},
+    {'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p'},
+    {'q', 'r', 's', 't', 'u', 'v', 'w', 'x'},
+    {'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F'},
+    {'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N'},
+    {'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V'}};
 
-const char keyboard2[KB_ROWS][KB_COLS] =
-    {
-        {'w', 'x', 'y', 'z', '0', '1', '2', '3'},
-        {'4', '5', '6', '7', '8', '9', '*', '#'},
-        {'&', '!', '%', '?', '-', '+', '_', '<'},
-        {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
-        {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
-        {' ', ' ', ' ', ' ', ' ', ' ', ' ', 'O'} // O = OK
-};
+const char keyboard2[KB_ROWS][KB_COLS] = {
+    {'W', 'X', 'Y', 'Z', '0', '1', '2', '3'},
+    {'4', '5', '6', '7', '8', '9', '#', '@'},
+    {'!', '%', '&', '*', '?', '-', '+', '<'},
+    {'|', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
+    {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
+    {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '}};
 
 int key_row = 0;
 int key_col = 0;
@@ -251,6 +249,14 @@ void draw_networks()
 
 /* ====================== JOYSTICK ====================== */
 
+absolute_time_t last_move_time = {0};
+int kb_offset = 0;
+
+bool get_blink()
+{
+    return (to_ms_since_boot(get_absolute_time()) / 300) % 2;
+}
+
 int joystick_vertical()
 {
     adc_select_input(0);
@@ -319,6 +325,8 @@ void handle_network_menu()
         if (selected_network < scroll_offset)
         {
             scroll_offset--;
+            if (scroll_offset < 0)
+                scroll_offset = 0;
         }
 
         sleep_ms(180);
@@ -327,6 +335,14 @@ void handle_network_menu()
     if (joystick_pressed())
     {
         sleep_ms(300);
+
+        pass_len = 0;
+        password[0] = 0;
+
+        key_row = 0;
+        key_col = 0;
+        kb_offset = 0;
+
         state = STATE_PASSWORD;
     }
 }
@@ -345,25 +361,36 @@ void draw_password_screen()
         masked[i] = '*';
     masked[pass_len] = 0;
 
-    ssd1306_draw_string(0, 12, masked);
+    ssd1306_draw_string(40, 0, masked);
+    ssd1306_draw_string(6, 10, "Joy: Selec | A: Page");
+    ssd1306_draw_string(96, 0, keyboard_page ? "2/2" : "1/2");
 
-    const char (*kb)[KB_COLS] = keyboard_page ? keyboard2 : keyboard;
+    const char (*kb)[KB_COLS] = keyboard_page ? keyboard2 : keyboard1;
 
     for (int r = 0; r < 3; r++)
+    {
+        int real_r = kb_offset + r;
         for (int c = 0; c < 8; c++)
         {
             char buf[4];
 
-            char k = kb[r][c];
+            char k = kb[real_r][c];
 
-            if (r == key_row && c == key_col)
-                sprintf(buf, "[%c]", k);
+            if (real_r == key_row && c == key_col)
+            {
+                if (get_blink())
+                    sprintf(buf, "[%c]", k);
+                else
+                    sprintf(buf, " %c ", k);
+            }
             else
+            {
                 sprintf(buf, " %c ", k);
+            }
 
             ssd1306_draw_string(c * 16, r * 16 + 24, buf);
         }
-
+    }
     oled_show();
 }
 
@@ -374,9 +401,18 @@ void handle_password()
     int dx = joystick_horizontal();
     int dy = joystick_vertical();
 
-    key_col += dx;
-    key_row += dy;
+    if (time_reached(last_move_time))
+    {
+        if (dx != 0 || dy != 0)
+        {
+            key_col += dx;
+            key_row += dy;
 
+            last_move_time = make_timeout_time_ms(MOVE_DELAY_MS);
+        }
+    }
+
+    // limites
     if (key_col < 0)
         key_col = 0;
     if (key_col >= KB_COLS)
@@ -384,26 +420,37 @@ void handle_password()
 
     if (key_row < 0)
         key_row = 0;
-    if (key_row >= 3)
-        key_row = 2;
+    if (key_row >= KB_ROWS)
+        key_row = KB_ROWS - 1;
 
-    const char (*kb)[KB_COLS] = keyboard_page ? keyboard2 : keyboard;
+    // scroll inteligente
+    kb_offset = key_row - 1;
+
+    if (kb_offset < 0)
+        kb_offset = 0;
+    if (kb_offset > KB_ROWS - 3)
+        kb_offset = KB_ROWS - 3;
+
+    const char (*kb)[KB_COLS] = keyboard_page ? keyboard2 : keyboard1;
 
     char key = kb[key_row][key_col];
 
-    if (joystick_pressed())
+    static absolute_time_t last_click = {0};
+
+    if (joystick_pressed() && time_reached(last_click))
     {
-        sleep_ms(200);
+        last_click = make_timeout_time_ms(200);
 
         if (key == '<')
         {
             if (pass_len > 0)
-            {
-                pass_len--;
-                password[pass_len] = 0;
-            }
+                password[--pass_len] = 0;
         }
-        else if (key == 'O')
+        else if (key == ' ')
+        {
+            return;
+        }
+        else if (key == '|')
         {
             state = STATE_CONNECTING;
         }
@@ -501,6 +548,8 @@ int main()
         return -1;
 
     cyw43_arch_enable_sta_mode();
+
+    last_move_time = make_timeout_time_ms(0);
 
     while (true)
     {
