@@ -17,6 +17,7 @@
 #define JOY_BTN 22
 
 #define BOTAO_A 5
+#define BOTAO_B 6
 
 #define WIFI_TIMEOUT_MS 30000
 #define MAX_NETWORKS 20
@@ -293,6 +294,11 @@ bool buttonA_pressed()
     return !gpio_get(BOTAO_A);
 }
 
+bool buttonB_pressed()
+{
+    return !gpio_get(BOTAO_B);
+}
+
 void handle_network_menu()
 {
     draw_networks();
@@ -401,6 +407,38 @@ void handle_password()
     int dx = joystick_horizontal();
     int dy = joystick_vertical();
 
+    static bool a_prev = false;
+    static absolute_time_t a_press_time;
+
+    bool a_now = buttonA_pressed();
+
+    // Detecta início do pressionamento
+    if (a_now && !a_prev)
+    {
+        a_press_time = get_absolute_time();
+    }
+
+    // Detecta soltura do botão
+    if (!a_now && a_prev)
+    {
+        int64_t press_duration = absolute_time_diff_us(a_press_time, get_absolute_time());
+
+        if (press_duration > 800000)
+        {
+            // 🔴 PRESSÃO LONGA → VOLTAR
+            state = STATE_LIST;
+            sleep_ms(300);
+            return;
+        }
+        else
+        {
+            // 🟢 CLIQUE CURTO → TROCAR TECLADO
+            keyboard_page = !keyboard_page;
+        }
+    }
+
+    // Atualiza estado anterior
+    a_prev = a_now;
     if (time_reached(last_move_time))
     {
         if (dx != 0 || dy != 0)
@@ -450,10 +488,6 @@ void handle_password()
         {
             return;
         }
-        else if (key == '|')
-        {
-            state = STATE_CONNECTING;
-        }
         else
         {
             if (pass_len < 63)
@@ -464,10 +498,12 @@ void handle_password()
         }
     }
 
-    if (buttonA_pressed())
+    // ================= CONFIRMAR SENHA (Botão B) =================
+    if (buttonB_pressed())
     {
-        keyboard_page = !keyboard_page;
-        sleep_ms(250);
+        sleep_ms(200);
+        state = STATE_CONNECTING;
+        return;
     }
 }
 
@@ -492,11 +528,32 @@ void connect_wifi()
         state = STATE_ERROR;
 }
 
+void get_ip_string(char *buffer)
+{
+    uint32_t ip = cyw43_state.netif[0].ip_addr.addr;
+
+    sprintf(buffer, "%d.%d.%d.%d",
+            (ip >> 0) & 0xFF,
+            (ip >> 8) & 0xFF,
+            (ip >> 16) & 0xFF,
+            (ip >> 24) & 0xFF);
+}
+
 void screen_connected()
 {
     oled_clear();
+
+    char ip_str[20];
+
+    sleep_ms(500);
+    get_ip_string(ip_str);
+
     ssd1306_draw_string(0, 0, "WiFi conectado");
-    ssd1306_draw_string(0, 16, networks[selected_network].ssid);
+    ssd1306_draw_string(0, 16, "Rede:");
+    ssd1306_draw_string(30, 16, networks[selected_network].ssid);
+    ssd1306_draw_string(0, 32, "IP:");
+    ssd1306_draw_string(10, 32, ip_str);
+
     oled_show();
 }
 
@@ -526,6 +583,10 @@ int main()
     gpio_init(BOTAO_A);
     gpio_set_dir(BOTAO_A, false);
     gpio_pull_up(BOTAO_A);
+
+    gpio_init(BOTAO_B);
+    gpio_set_dir(BOTAO_B, false);
+    gpio_pull_up(BOTAO_B);
 
     i2c_init(i2c1, 400000);
 
