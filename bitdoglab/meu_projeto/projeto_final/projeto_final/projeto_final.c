@@ -5,7 +5,9 @@
 #include "hardware/adc.h"
 #include "hardware/dma.h"
 #include "hardware/sync.h"
+#include "hardware/i2c.h"
 #include "pico/cyw43_arch.h"
+#include "hardware/watchdog.h"
 
 // ================= PINOS =================
 #define PIR_PIN 8
@@ -20,9 +22,9 @@
 absolute_time_t start_time;
 
 // ================= SENHA =================
-#define PASSWORD_LENGTH 8
+#define PASSWORD_LENGTH 4
 
-const char senha_correta[PASSWORD_LENGTH + 1] = "12345678";
+const char senha_correta[PASSWORD_LENGTH + 1] = "5555";
 char senha_digitada[PASSWORD_LENGTH + 1];
 int senha_index = 0;
 
@@ -263,13 +265,11 @@ void process_alarm()
     {
         bool system_ready = absolute_time_diff_us(start_time, get_absolute_time()) > 5000000;
 
-        if (system_ready && (pir || sound))
+        if (system_ready)
         {
-            state = ALARM_TRIGGERED;
+            pir = get_pir_event();
+            // sound = detect_sound(); // opcional por enquanto
         }
-
-        // temporariamente desabilitado
-        // sound = detect_sound();
     }
 
     if (state != last_state)
@@ -358,6 +358,330 @@ void init_wifi()
     }
 }
 
+// ================= DISPLAY =================
+
+#define I2C_PORT i2c1
+#define I2C_SDA 14
+#define I2C_SCL 15
+#define OLED_ADDR 0x3C
+
+#define OLED_WIDTH 128
+#define OLED_HEIGHT 64
+
+uint8_t oled_buffer[OLED_WIDTH * OLED_HEIGHT / 8];
+
+bool oled_ok = false;
+
+void oled_command(uint8_t cmd)
+{
+    uint8_t buf[2] = {0x00, cmd};
+    i2c_write_blocking(I2C_PORT, OLED_ADDR, buf, 2, false);
+}
+
+void oled_data(uint8_t *data, size_t len)
+{
+    uint8_t buf[17]; // máximo seguro por transmissão
+
+    for (size_t i = 0; i < len; i += 16)
+    {
+        size_t chunk = (len - i > 16) ? 16 : (len - i);
+
+        buf[0] = 0x40;
+        memcpy(&buf[1], &data[i], chunk);
+
+        i2c_write_blocking(I2C_PORT, OLED_ADDR, buf, chunk + 1, false);
+    }
+}
+
+void oled_init()
+{
+    i2c_init(I2C_PORT, 100 * 1000);
+
+    gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
+    gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
+    gpio_pull_up(I2C_SDA);
+    gpio_pull_up(I2C_SCL);
+
+    sleep_ms(100);
+
+    oled_command(0xAE); // OFF
+    oled_command(0x20);
+    oled_command(0x00);
+    oled_command(0xB0);
+    oled_command(0xC8);
+    oled_command(0x00);
+    oled_command(0x10);
+    oled_command(0x40);
+    oled_command(0x81);
+    oled_command(0xFF);
+    oled_command(0xA1);
+    oled_command(0xA6);
+    oled_command(0xA8);
+    oled_command(0x3F);
+    oled_command(0xA4);
+    oled_command(0xD3);
+    oled_command(0x00);
+    oled_command(0xD5);
+    oled_command(0xF0);
+    oled_command(0xD9);
+    oled_command(0x22);
+    oled_command(0xDA);
+    oled_command(0x12);
+    oled_command(0xDB);
+    oled_command(0x20);
+    oled_command(0x8D);
+    oled_command(0x14);
+    oled_command(0xAF); // ON
+
+    int res = i2c_write_blocking(I2C_PORT, OLED_ADDR, NULL, 0, false);
+
+    if (res >= 0)
+    {
+        oled_ok = true;
+        printf("OLED detectado\n");
+    }
+    else
+    {
+        oled_ok = false;
+        printf("OLED NAO encontrado\n");
+        return;
+    }
+}
+
+void oled_clear()
+{
+    memset(oled_buffer, 0, sizeof(oled_buffer));
+}
+
+void oled_update()
+{
+    if (!oled_ok)
+        return;
+
+    for (int page = 0; page < 8; page++)
+    {
+        oled_command(0xB0 + page);
+        oled_command(0x00);
+        oled_command(0x10);
+
+        oled_data(&oled_buffer[OLED_WIDTH * page], OLED_WIDTH);
+    }
+}
+
+const uint8_t font5x7[96][5] = {
+    // ASCII 32–127
+
+    {0x00, 0x00, 0x00, 0x00, 0x00}, // ' '
+    {0x00, 0x00, 0x5F, 0x00, 0x00}, // !
+    {0x00, 0x07, 0x00, 0x07, 0x00}, // "
+    {0x14, 0x7F, 0x14, 0x7F, 0x14}, // #
+    {0x24, 0x2A, 0x7F, 0x2A, 0x12}, // $
+    {0x23, 0x13, 0x08, 0x64, 0x62}, // %
+    {0x36, 0x49, 0x55, 0x22, 0x50}, // &
+    {0x00, 0x05, 0x03, 0x00, 0x00}, // '
+    {0x00, 0x1C, 0x22, 0x41, 0x00}, // (
+    {0x00, 0x41, 0x22, 0x1C, 0x00}, // )
+    {0x14, 0x08, 0x3E, 0x08, 0x14}, // *
+    {0x08, 0x08, 0x3E, 0x08, 0x08}, // +
+    {0x00, 0x50, 0x30, 0x00, 0x00}, // ,
+    {0x08, 0x08, 0x08, 0x08, 0x08}, // -
+    {0x00, 0x60, 0x60, 0x00, 0x00}, // .
+    {0x20, 0x10, 0x08, 0x04, 0x02}, // /
+
+    {0x3E, 0x51, 0x49, 0x45, 0x3E}, // 0
+    {0x00, 0x42, 0x7F, 0x40, 0x00}, // 1
+    {0x42, 0x61, 0x51, 0x49, 0x46}, // 2
+    {0x21, 0x41, 0x45, 0x4B, 0x31}, // 3
+    {0x18, 0x14, 0x12, 0x7F, 0x10}, // 4
+    {0x27, 0x45, 0x45, 0x45, 0x39}, // 5
+    {0x3C, 0x4A, 0x49, 0x49, 0x30}, // 6
+    {0x01, 0x71, 0x09, 0x05, 0x03}, // 7
+    {0x36, 0x49, 0x49, 0x49, 0x36}, // 8
+    {0x06, 0x49, 0x49, 0x29, 0x1E}, // 9
+
+    {0x00, 0x36, 0x36, 0x00, 0x00}, // :
+    {0x00, 0x56, 0x36, 0x00, 0x00}, // ;
+    {0x08, 0x14, 0x22, 0x41, 0x00}, // <
+    {0x14, 0x14, 0x14, 0x14, 0x14}, // =
+    {0x00, 0x41, 0x22, 0x14, 0x08}, // >
+    {0x02, 0x01, 0x51, 0x09, 0x06}, // ?
+
+    {0x32, 0x49, 0x79, 0x41, 0x3E}, // @
+
+    {0x7E, 0x11, 0x11, 0x11, 0x7E}, // A
+    {0x7F, 0x49, 0x49, 0x49, 0x36}, // B
+    {0x3E, 0x41, 0x41, 0x41, 0x22}, // C
+    {0x7F, 0x41, 0x41, 0x22, 0x1C}, // D
+    {0x7F, 0x49, 0x49, 0x49, 0x41}, // E
+    {0x7F, 0x09, 0x09, 0x09, 0x01}, // F
+    {0x3E, 0x41, 0x49, 0x49, 0x7A}, // G
+    {0x7F, 0x08, 0x08, 0x08, 0x7F}, // H
+    {0x00, 0x41, 0x7F, 0x41, 0x00}, // I
+    {0x20, 0x40, 0x41, 0x3F, 0x01}, // J
+    {0x7F, 0x08, 0x14, 0x22, 0x41}, // K
+    {0x7F, 0x40, 0x40, 0x40, 0x40}, // L
+    {0x7F, 0x02, 0x04, 0x02, 0x7F}, // M
+    {0x7F, 0x04, 0x08, 0x10, 0x7F}, // N
+    {0x3E, 0x41, 0x41, 0x41, 0x3E}, // O
+    {0x7F, 0x09, 0x09, 0x09, 0x06}, // P
+    {0x3E, 0x41, 0x51, 0x21, 0x5E}, // Q
+    {0x7F, 0x09, 0x19, 0x29, 0x46}, // R
+    {0x46, 0x49, 0x49, 0x49, 0x31}, // S
+    {0x01, 0x01, 0x7F, 0x01, 0x01}, // T
+    {0x3F, 0x40, 0x40, 0x40, 0x3F}, // U
+    {0x1F, 0x20, 0x40, 0x20, 0x1F}, // V
+    {0x7F, 0x20, 0x18, 0x20, 0x7F}, // W
+    {0x63, 0x14, 0x08, 0x14, 0x63}, // X
+    {0x03, 0x04, 0x78, 0x04, 0x03}, // Y
+    {0x61, 0x51, 0x49, 0x45, 0x43}, // Z
+
+    {0x00, 0x7F, 0x41, 0x41, 0x00}, // [
+    {0x02, 0x04, 0x08, 0x10, 0x20}, // '\'
+    {0x00, 0x41, 0x41, 0x7F, 0x00}, // ]
+    {0x04, 0x02, 0x01, 0x02, 0x04}, // ^
+    {0x40, 0x40, 0x40, 0x40, 0x40}, // _
+};
+
+void oled_draw_char(int x, int y, char c)
+{
+    if (c < 32 || c > 127)
+        return;
+
+    int index = c - 32;
+
+    const uint8_t *bitmap = font5x7[index];
+
+    for (int i = 0; i < 5; i++)
+    {
+        for (int j = 0; j < 8; j++)
+        {
+            if (bitmap[i] & (1 << j))
+            {
+                int px = x + i;
+                int py = y + j;
+
+                int index_buf = px + (py / 8) * OLED_WIDTH;
+                oled_buffer[index_buf] |= (1 << (py % 8));
+            }
+        }
+    }
+}
+
+void oled_draw_char_scaled(int x, int y, char c, int scale)
+{
+    // Faixa ASCII suportada (32 a 127)
+    if (c < 32 || c > 127)
+        return;
+
+    int index = c - 32; // Mapeamento direto ASCII
+
+    const uint8_t *bitmap = font5x7[index];
+
+    for (int i = 0; i < 5; i++) // largura
+    {
+        for (int j = 0; j < 8; j++) // altura
+        {
+            if (bitmap[i] & (1 << j))
+            {
+                for (int dx = 0; dx < scale; dx++)
+                {
+                    for (int dy = 0; dy < scale; dy++)
+                    {
+                        int px = x + (i * scale) + dx;
+                        int py = y + (j * scale) + dy;
+
+                        // Proteção contra overflow de buffer
+                        if (px < 0 || px >= OLED_WIDTH || py < 0 || py >= OLED_HEIGHT)
+                            continue;
+
+                        int index_buf = px + (py / 8) * OLED_WIDTH;
+                        oled_buffer[index_buf] |= (1 << (py % 8));
+                    }
+                }
+            }
+        }
+    }
+}
+
+void oled_draw_string(int x, int y, const char *str)
+{
+    while (*str)
+    {
+        oled_draw_char(x, y, *str);
+        x += 6;
+        str++;
+    }
+}
+
+void oled_draw_string_scaled(int x, int y, const char *str, int scale)
+{
+    while (*str)
+    {
+        oled_draw_char_scaled(x, y, *str, scale);
+        x += (6 * scale);
+        str++;
+    }
+}
+
+int oled_get_centered_x(const char *str, int scale)
+{
+    int len = strlen(str);
+    int width = len * 6 * scale;
+    return (OLED_WIDTH - width) / 2;
+}
+
+void oled_show_status()
+{
+    if (!oled_ok)
+        return;
+
+    oled_clear();
+
+    // ================= STATUS (GRANDE E LIMPO) =================
+    const char *status;
+
+    if (state == ALARM_DISARMED)
+        status = "DESARMADO";
+    else if (state == ALARM_ARMED)
+        status = "ARMADO";
+    else
+        status = "ALERTA";
+
+    int x_center = oled_get_centered_x(status, 2);
+    oled_draw_string_scaled(x_center, 0, status, 2);
+
+    // ================= LINHA SEPARADORA =================
+    for (int x = 0; x < OLED_WIDTH; x++)
+    {
+        int index = x + (24 / 8) * OLED_WIDTH;
+        oled_buffer[index] |= (1 << (24 % 8));
+    }
+
+    // ================= DIGITO =================
+    char buf[16];
+    sprintf(buf, "ATUAL: %d", current_digit);
+    oled_draw_string(0, 30, buf);
+
+    // ================= SENHA =================
+    oled_draw_string(0, 45, "SENHA: ");
+
+    for (int i = 0; i < senha_index; i++)
+    {
+        oled_draw_char(35 + i * 6, 45, '*');
+    }
+
+    // Cursor piscando
+    static bool blink = false;
+    blink = !blink;
+
+    if (blink && senha_index < PASSWORD_LENGTH)
+    {
+        oled_draw_char(35 + senha_index * 6, 45, '*');
+    }
+
+    oled_update();
+}
+
 // ================= MAIN =================
 int main()
 {
@@ -374,14 +698,21 @@ int main()
     init_audio_dma();
     init_wifi();
     init_leds();
+    oled_init();
+
+    watchdog_enable(5000, 1); // 5 segundos
 
     state = ALARM_ARMED;
 
     while (true)
     {
+        watchdog_update(); // <<< ESSENCIAL
+
         cyw43_arch_poll();
 
         process_alarm();
+
+        oled_show_status();
 
         sleep_ms(100);
     }

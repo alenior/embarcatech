@@ -50,7 +50,9 @@ target_link_libraries(projeto_final
         hardware_adc
         hardware_dma
         hardware_sync
+        hardware_i2c
         pico_cyw43_arch_lwip_poll
+        hardware_watchdog
 )
 
 # Add the standard include files to the build
