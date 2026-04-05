@@ -31,9 +31,63 @@ int senha_index = 0;
 int current_digit = 0;
 
 // ================= AUDIO =================
-#define AUDIO_BUFFER_SIZE 256
-uint16_t audio_buffer[AUDIO_BUFFER_SIZE];
-int dma_chan;
+uint16_t audio_baseline = 0;
+bool audio_initialized = false;
+
+absolute_time_t last_sound_trigger = 0;
+#define SOUND_COOLDOWN_US 2000000 // 2 segundos
+
+bool detect_sound()
+{
+    adc_select_input(2);
+
+    uint16_t max_val = 0;
+    uint16_t min_val = 4095;
+
+    for (int i = 0; i < 16; i++)
+    {
+        uint16_t v = adc_read();
+
+        if (v > max_val)
+            max_val = v;
+        if (v < min_val)
+            min_val = v;
+
+        sleep_us(20);
+    }
+
+    uint16_t amplitude = max_val - min_val;
+
+    // Inicialização do baseline
+    if (!audio_initialized)
+    {
+        audio_baseline = amplitude;
+        audio_initialized = true;
+        return false;
+    }
+
+    // Filtro mais estável (IIR)
+    audio_baseline = (audio_baseline * 7 + amplitude) / 8;
+
+    int diff = amplitude - audio_baseline;
+    if (diff < 0)
+        diff = -diff;
+
+    bool detected = diff > 150; // ligeiramente mais sensível
+
+    if (detected)
+    {
+        if (absolute_time_diff_us(last_sound_trigger, get_absolute_time()) < SOUND_COOLDOWN_US)
+            return false;
+
+        last_sound_trigger = get_absolute_time();
+
+        printf("SOM DETECTADO | diff=%d\n", diff); // debug útil
+        return true;
+    }
+
+    return false;
+}
 
 // ================= ESTADOS =================
 typedef enum
@@ -99,46 +153,7 @@ void init_joystick()
     adc_init();
     adc_gpio_init(JOY_X);
     adc_gpio_init(JOY_Y);
-}
-
-// ================= AUDIO =================
-void init_audio_dma()
-{
-    adc_init();
     adc_gpio_init(AUDIO_PIN);
-    adc_select_input(2);
-
-    adc_fifo_setup(true, true, 1, false, false);
-
-    dma_chan = dma_claim_unused_channel(true);
-
-    dma_channel_config cfg = dma_channel_get_default_config(dma_chan);
-    channel_config_set_transfer_data_size(&cfg, DMA_SIZE_16);
-    channel_config_set_read_increment(&cfg, false);
-    channel_config_set_write_increment(&cfg, true);
-
-    dma_channel_configure(
-        dma_chan,
-        &cfg,
-        audio_buffer,
-        &adc_hw->fifo,
-        AUDIO_BUFFER_SIZE,
-        true);
-}
-
-bool detect_sound()
-{
-    adc_select_input(2);
-
-    uint32_t sum = 0;
-
-    for (int i = 0; i < 100; i++)
-    {
-        sum += adc_read();
-        sleep_us(50);
-    }
-
-    return (sum / 100) > 2500;
 }
 
 // ================= INPUT =================
@@ -268,7 +283,7 @@ void process_alarm()
         if (system_ready)
         {
             pir = get_pir_event();
-            // sound = detect_sound(); // opcional por enquanto
+            sound = detect_sound();
         }
     }
 
@@ -352,7 +367,7 @@ void init_wifi()
             "Marias",
             "88526352",
             CYW43_AUTH_WPA2_AES_PSK,
-            30000))
+            15000))
     {
         printf("WiFi conectado\n");
     }
@@ -375,7 +390,14 @@ bool oled_ok = false;
 void oled_command(uint8_t cmd)
 {
     uint8_t buf[2] = {0x00, cmd};
-    i2c_write_blocking(I2C_PORT, OLED_ADDR, buf, 2, false);
+
+    int res = i2c_write_blocking(I2C_PORT, OLED_ADDR, buf, 2, false);
+
+    if (res < 0)
+    {
+        printf("Erro I2C (cmd)\n");
+        oled_ok = false;
+    }
 }
 
 void oled_data(uint8_t *data, size_t len)
@@ -389,7 +411,14 @@ void oled_data(uint8_t *data, size_t len)
         buf[0] = 0x40;
         memcpy(&buf[1], &data[i], chunk);
 
-        i2c_write_blocking(I2C_PORT, OLED_ADDR, buf, chunk + 1, false);
+        int res = i2c_write_blocking(I2C_PORT, OLED_ADDR, buf, chunk + 1, false);
+
+        if (res < 0)
+        {
+            printf("Erro I2C (data)\n");
+            oled_ok = false;
+            return; // interrompe envio
+        }
     }
 }
 
@@ -433,7 +462,8 @@ void oled_init()
     oled_command(0x14);
     oled_command(0xAF); // ON
 
-    int res = i2c_write_blocking(I2C_PORT, OLED_ADDR, NULL, 0, false);
+    uint8_t dummy = 0x00;
+    int res = i2c_write_blocking(I2C_PORT, OLED_ADDR, &dummy, 1, false);
 
     if (res >= 0)
     {
@@ -695,18 +725,16 @@ int main()
     init_pir();
     init_buttons();
     init_joystick();
-    init_audio_dma();
     init_wifi();
+    watchdog_enable(15000, 1); // 15 segundos
     init_leds();
     oled_init();
-
-    watchdog_enable(5000, 1); // 5 segundos
 
     state = ALARM_ARMED;
 
     while (true)
     {
-        watchdog_update(); // <<< ESSENCIAL
+        watchdog_update();
 
         cyw43_arch_poll();
 
@@ -714,6 +742,10 @@ int main()
 
         oled_show_status();
 
-        sleep_ms(100);
+        for (int i = 0; i < 10; i++)
+        {
+            sleep_ms(10);
+            cyw43_arch_poll();
+        }
     }
 }
