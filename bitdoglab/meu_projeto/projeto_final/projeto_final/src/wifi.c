@@ -5,19 +5,50 @@
 
 static bool connected = false;
 static absolute_time_t last_attempt;
+static absolute_time_t last_status_log;
 
-void wifi_init()
+static const char *wifi_status_str(int status)
 {
-    printf("Conectando WiFi...\n");
+    switch (status)
+    {
+    case CYW43_LINK_DOWN:
+        return "DOWN";
+    case CYW43_LINK_JOIN:
+        return "JOIN";
+    case CYW43_LINK_NOIP:
+        return "NOIP";
+    case CYW43_LINK_UP:
+        return "UP";
+    case CYW43_LINK_FAIL:
+        return "FAIL";
+    case CYW43_LINK_NONET:
+        return "NONET";
+    case CYW43_LINK_BADAUTH:
+        return "BADAUTH";
+    default:
+        return "UNKNOWN";
+    }
+}
 
-    cyw43_arch_enable_sta_mode();
-
+static void wifi_start_connect(void)
+{
     cyw43_arch_wifi_connect_async(
         WIFI_SSID,
         WIFI_PASS,
         CYW43_AUTH_WPA2_MIXED_PSK);
 
     last_attempt = get_absolute_time();
+    printf("WiFi -> tentativa de conexão iniciada\n");
+}
+
+void wifi_init()
+{
+    printf("Conectando WiFi...\n");
+
+    cyw43_arch_enable_sta_mode();
+    wifi_start_connect();
+    last_status_log = get_absolute_time();
+
     printf("WiFi init\n");
 }
 
@@ -27,39 +58,30 @@ void wifi_task()
 
     int status = cyw43_wifi_link_status(&cyw43_state, CYW43_ITF_STA);
 
-    switch (status)
+    if (absolute_time_diff_us(last_status_log, get_absolute_time()) > 2000000)
     {
-    case CYW43_LINK_UP:
+        last_status_log = get_absolute_time();
+        printf("WiFi status=%s (%d)\n", wifi_status_str(status), status);
+    }
+
+    if (status == CYW43_LINK_UP)
+    {
         if (!connected)
         {
             printf("WiFi conectado\n");
             connected = true;
         }
         return;
-
-    case CYW43_LINK_JOIN:
-    case CYW43_LINK_NOIP:
-        // ainda conectando → NÃO interfere
-        return;
-
-    default:
-        connected = false;
-        break;
     }
 
-    if (absolute_time_diff_us(last_attempt, get_absolute_time()) > 10000000)
+    connected = false;
+
+    // Se ficar preso em JOIN/NOIP por muito tempo, reinicia tentativa.
+    if (absolute_time_diff_us(last_attempt, get_absolute_time()) > 15000000)
     {
-        printf("Reconectando WiFi...\n");
-
-        cyw43_arch_wifi_connect_async(
-            WIFI_SSID,
-            WIFI_PASS,
-            CYW43_AUTH_WPA2_MIXED_PSK);
-
-        last_attempt = get_absolute_time();
+        printf("WiFi reconectando (status=%s)\n", wifi_status_str(status));
+        wifi_start_connect();
     }
-
-    printf("WiFi status: %d\n", status);
 }
 
 bool wifi_is_connected()
