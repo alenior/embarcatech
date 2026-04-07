@@ -18,14 +18,39 @@ typedef enum
     TRIGGERED
 } state_t;
 
+typedef enum
+{
+    TRIGGER_NONE,
+    TRIGGER_MOTION,
+    TRIGGER_SOUND
+} trigger_type_t;
+
 static state_t state = ARMED;
 static state_t last = -1;
+static trigger_type_t trigger_type = TRIGGER_NONE;
 
 static void set_leds_for_state(state_t s)
 {
     gpio_put(LED_R, s == TRIGGERED);
     gpio_put(LED_G, s == DISARMED);
     gpio_put(LED_B, s == ARMED);
+}
+
+static const char *status_text(void)
+{
+    if (state == DISARMED)
+        return "DESARMADO";
+
+    if (state == ARMED)
+        return "ARMADO";
+
+    if (trigger_type == TRIGGER_MOTION)
+        return "ALERTA - MOVIMENTO";
+
+    if (trigger_type == TRIGGER_SOUND)
+        return "ALERTA - SOM";
+
+    return "ALERTA";
 }
 
 void alarm_init()
@@ -39,6 +64,8 @@ void alarm_init()
     gpio_set_dir(LED_B, GPIO_OUT);
 
     set_leds_for_state(state);
+    display_set_status(status_text());
+    firebase_set_status(status_text());
     printf("Alarm init\n");
 }
 
@@ -51,46 +78,8 @@ void alarm_task()
 
     last_run = get_absolute_time();
 
-    static absolute_time_t last_log_time = {0};
-
-    if (state != last)
-    {
-        set_leds_for_state(state);
-
-        if (absolute_time_diff_us(last_log_time, get_absolute_time()) > 500000)
-        {
-            last_log_time = get_absolute_time();
-            last = state;
-
-            if (state == DISARMED)
-                firebase_log("DISARMED", "SYSTEM");
-
-            if (state == ARMED)
-                firebase_log("ARMED", "SYSTEM");
-
-            if (state == TRIGGERED)
-                firebase_log("TRIGGERED", "ALARM");
-        }
-    }
-
     bool pir = pir_get();
     bool sound = audio_detect();
-
-    static state_t last_display = -1;
-
-    if (state != last_display)
-    {
-        last_display = state;
-
-        if (state == DISARMED)
-            display_set_status("DESARMADO");
-
-        if (state == ARMED)
-            display_set_status("ARMADO");
-
-        if (state == TRIGGERED)
-            display_set_status("ALERTA");
-    }
 
     switch (state)
     {
@@ -100,13 +89,45 @@ void alarm_task()
         break;
 
     case ARMED:
-        if (pir || sound)
+        if (pir)
+        {
+            trigger_type = TRIGGER_MOTION;
             state = TRIGGERED;
+        }
+        else if (sound)
+        {
+            trigger_type = TRIGGER_SOUND;
+            state = TRIGGERED;
+        }
         break;
 
     case TRIGGERED:
         if (buttons_ok())
+        {
             state = DISARMED;
+            trigger_type = TRIGGER_NONE;
+        }
         break;
+    }
+
+    if (state != last)
+    {
+        last = state;
+        set_leds_for_state(state);
+
+        const char *status = status_text();
+        display_set_status(status);
+        firebase_set_status(status);
+
+        if (state == DISARMED)
+            firebase_log("DESARMADO", "SYSTEM");
+        else if (state == ARMED)
+            firebase_log("ARMADO", "SYSTEM");
+        else if (trigger_type == TRIGGER_MOTION)
+            firebase_log("ALERTA - MOVIMENTO", "MOTION");
+        else if (trigger_type == TRIGGER_SOUND)
+            firebase_log("ALERTA - SOM", "SOUND");
+        else
+            firebase_log("ALERTA", "ALARM");
     }
 }

@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static char current[16] = "INICIANDO";
+static char current[32] = "INICIANDO";
 static bool dirty = true;
 
 void display_init()

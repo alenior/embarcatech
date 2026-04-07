@@ -9,8 +9,10 @@ static uint16_t baseline = 0;
 static bool initialized = false;
 static absolute_time_t last_trigger = {0};
 
-#define SOUND_THRESHOLD 150
-#define COOLDOWN_US 2000000
+#define SOUND_THRESHOLD 80
+#define COOLDOWN_US 1200000
+#define SAMPLE_INTERVAL_US 5000
+#define BASELINE_SAMPLES 32
 
 void audio_init(void)
 {
@@ -21,37 +23,39 @@ void audio_init(void)
 
 bool audio_detect(void)
 {
-    static bool adc_ready = false;
     static absolute_time_t last_read = {0};
 
-    if (!adc_ready)
-    {
-        adc_select_input(AUDIO_PIN - 28);
-        adc_ready = true;
-    }
-
-    // lê no máximo a cada 10ms
-    if (absolute_time_diff_us(last_read, get_absolute_time()) < 10000)
+    if (absolute_time_diff_us(last_read, get_absolute_time()) < SAMPLE_INTERVAL_US)
     {
         return false;
     }
 
     last_read = get_absolute_time();
 
+    // garante canal correto mesmo se outro módulo usar o ADC
+    adc_select_input(AUDIO_PIN - 26);
+
     uint16_t v = adc_read();
     if (v > 4095)
     {
-        return false; // sanity check
+        return false;
     }
 
     if (!initialized)
     {
-        baseline = v;
+        uint32_t sum = 0;
+        for (int i = 0; i < BASELINE_SAMPLES; i++)
+        {
+            sum += adc_read();
+            sleep_us(200);
+        }
+
+        baseline = (uint16_t)(sum / BASELINE_SAMPLES);
         initialized = true;
         return false;
     }
 
-    baseline = (baseline * 7 + v) / 8;
+    baseline = (uint16_t)((baseline * 15 + v) / 16);
 
     int diff = (int)v - (int)baseline;
     if (diff < 0)

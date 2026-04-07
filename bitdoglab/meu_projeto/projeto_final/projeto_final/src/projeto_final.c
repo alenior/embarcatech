@@ -27,47 +27,33 @@ int main()
     }
 
     wifi_init();
-    printf("Main -> WiFi OK\n");
 
     pir_init();
-    printf("Main -> PIR OK\n");
 
     audio_init();
-    printf("Main -> Audio OK\n");
 
     buttons_init();
-    printf("Main -> Buttons OK\n");
 
     joystick_init();
-    printf("Main -> Joystick OK\n");
 
     display_init();
-    printf("Main -> Display OK\n");
 
     alarm_init();
-    printf("Main -> Alarm OK\n");
 
     watchdog_enable(15000, 1);
-    printf("Main -> Watchdog OK\n");
 
     while (true)
     {
         watchdog_update();
-        printf("Main -> Watchdog Update OK\n");
 
         wifi_task();
-        printf("Main -> WiFi Task OK\n");
 
         firebase_task();
-        printf("Main -> Firebase Task OK\n");
 
         alarm_task();
-        printf("Main -> Alarm Task OK\n");
 
         display_task();
-        printf("Main -> Display Task OK\n");
 
         sleep_ms(100);
-        printf("Main -> Sleep OK\n");
     }
 }

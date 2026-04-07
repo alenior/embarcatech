@@ -47,6 +47,18 @@ void firebase_log(const char *state, const char *event)
     enqueue(json, path);
 }
 
+void firebase_set_status(const char *status)
+{
+    char json[128];
+    uint32_t ts = get_timestamp_ms();
+
+    snprintf(json, sizeof(json),
+             "{\"status\":\"%s\",\"ts\":%u}",
+             status, ts);
+
+    enqueue(json, "alarm_status/current");
+}
+
 void firebase_task()
 {
     if (!wifi_is_connected())
@@ -58,7 +70,7 @@ void firebase_task()
     // (versão simplificada: envia 1 por ciclo)
     // aqui você pode reaproveitar seu TCP já funcional
 
-    printf("Enviando evento Firebase\n");
+    printf("Firebase -> path=%s json=%s\n", queue[head].path, queue[head].json);
 
     head = (head + 1) % QUEUE_SIZE;
 }
