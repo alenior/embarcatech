@@ -18,7 +18,7 @@ void joystick_init()
 
 int joystick_get_digit()
 {
-    adc_select_input(0); // JOY_X
+    adc_select_input(JOY_X - 26);
 
     uint16_t x = adc_read();
 

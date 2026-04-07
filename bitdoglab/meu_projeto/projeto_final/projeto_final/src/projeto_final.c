@@ -53,21 +53,21 @@ int main()
     while (true)
     {
         watchdog_update();
-        printf("Main -> Watchdog Update\n");
+        printf("Main -> Watchdog Update OK\n");
 
         wifi_task();
-        printf("Main -> WiFi Task\n");
+        printf("Main -> WiFi Task OK\n");
 
         firebase_task();
-        printf("Main -> Firebase Task\n");
+        printf("Main -> Firebase Task OK\n");
 
         alarm_task();
-        printf("Main -> Alarm Task\n");
+        printf("Main -> Alarm Task OK\n");
 
         display_task();
-        printf("Main -> Display Task\n");
+        printf("Main -> Display Task OK\n");
 
         sleep_ms(100);
-        printf("Main -> Sleep Task\n");
+        printf("Main -> Sleep OK\n");
     }
 }

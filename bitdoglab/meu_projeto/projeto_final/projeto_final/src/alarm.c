@@ -4,8 +4,11 @@
 #include "pir.h"
 #include "audio.h"
 #include "buttons.h"
-#include "joystick.h"
+#include "config.h"
+
 #include <stdio.h>
+
+#include "hardware/gpio.h"
 #include "pico/stdlib.h"
 
 typedef enum
@@ -18,8 +21,24 @@ typedef enum
 static state_t state = ARMED;
 static state_t last = -1;
 
+static void set_leds_for_state(state_t s)
+{
+    gpio_put(LED_R, s == TRIGGERED);
+    gpio_put(LED_G, s == DISARMED);
+    gpio_put(LED_B, s == ARMED);
+}
+
 void alarm_init()
 {
+    gpio_init(LED_R);
+    gpio_init(LED_G);
+    gpio_init(LED_B);
+
+    gpio_set_dir(LED_R, GPIO_OUT);
+    gpio_set_dir(LED_G, GPIO_OUT);
+    gpio_set_dir(LED_B, GPIO_OUT);
+
+    set_leds_for_state(state);
     printf("Alarm init\n");
 }
 
@@ -27,7 +46,6 @@ void alarm_task()
 {
     static absolute_time_t last_run = {0};
 
-    // roda no máximo a cada 50ms
     if (absolute_time_diff_us(last_run, get_absolute_time()) < 50000)
         return;
 
@@ -37,6 +55,8 @@ void alarm_task()
 
     if (state != last)
     {
+        set_leds_for_state(state);
+
         if (absolute_time_diff_us(last_log_time, get_absolute_time()) > 500000)
         {
             last_log_time = get_absolute_time();
@@ -55,12 +75,6 @@ void alarm_task()
 
     bool pir = pir_get();
     bool sound = audio_detect();
-    static absolute_time_t last_debug = {0};
-
-    if (absolute_time_diff_us(last_debug, get_absolute_time()) > 1000000)
-    {
-        last_debug = get_absolute_time();
-    }
 
     static state_t last_display = -1;
 
