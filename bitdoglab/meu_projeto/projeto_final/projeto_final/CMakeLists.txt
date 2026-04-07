@@ -30,12 +30,28 @@ include(pico_sdk_import.cmake)
 
 project(projeto_final C CXX ASM)
 
+set(PICO_CYW43_ARCH_THREADSAFE_BACKGROUND 0)
+set(PICO_CYW43_ARCH_POLL 1)
+
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
+include_directories(include)
+
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(projeto_final projeto_final.c )
+add_executable(projeto_final 
+    src/projeto_final.c
+    src/wifi.c
+    src/firebase.c
+    src/display.c
+    src/alarm.c
+    src/pir.c
+    src/audio.c
+    src/buttons.c
+    src/joystick.c
+    src/utils.c
+)
 
 pico_set_program_name(projeto_final "projeto_final")
 pico_set_program_version(projeto_final "0.1")
@@ -57,13 +73,7 @@ target_link_libraries(projeto_final
 
 # Add the standard include files to the build
 target_include_directories(projeto_final PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}
+    ${CMAKE_CURRENT_LIST_DIR}/include
 )
 
-# Add any user requested libraries
-target_link_libraries(projeto_final 
-        
-        )
-
 pico_add_extra_outputs(projeto_final)
-
