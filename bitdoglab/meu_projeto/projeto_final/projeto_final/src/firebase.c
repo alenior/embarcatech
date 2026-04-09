@@ -4,6 +4,8 @@
 #include "config.h"
 #include "wifi.h"
 
+#include "lwip/altcp.h"
+#include "lwip/altcp_tls.h"
 #include "lwip/dns.h"
 #include "lwip/err.h"
 #include "lwip/ip_addr.h"
@@ -37,7 +39,8 @@ typedef enum
 } fb_state_t;
 
 static fb_state_t fb_state = FB_IDLE;
-static struct tcp_pcb *fb_pcb = NULL;
+static struct altcp_pcb *fb_pcb = NULL;
+static struct altcp_tls_config *fb_tls_cfg = NULL;
 static ip_addr_t fb_ip;
 static absolute_time_t next_retry = {0};
 static int fb_http_status = 0;
@@ -102,14 +105,13 @@ static void firebase_reset_connection(void)
 {
     if (fb_pcb != NULL)
     {
-        tcp_arg(fb_pcb, NULL);
-        tcp_recv(fb_pcb, NULL);
-        tcp_err(fb_pcb, NULL);
-        tcp_poll(fb_pcb, NULL, 0);
+        altcp_arg(fb_pcb, NULL);
+        altcp_recv(fb_pcb, NULL);
+        altcp_err(fb_pcb, NULL);
 
-        err_t c = tcp_close(fb_pcb);
+        err_t c = altcp_close(fb_pcb);
         if (c != ERR_OK)
-            tcp_abort(fb_pcb);
+            altcp_abort(fb_pcb);
 
         fb_pcb = NULL;
     }
@@ -123,7 +125,7 @@ static void firebase_schedule_retry(void)
     firebase_reset_connection();
 }
 
-static err_t firebase_on_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
+static err_t firebase_on_recv(void *arg, struct altcp_pcb *pcb, struct pbuf *p, err_t err)
 {
     (void)arg;
 
@@ -163,7 +165,7 @@ static err_t firebase_on_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, e
         }
     }
 
-    tcp_recved(tpcb, p->tot_len);
+    altcp_recved(pcb, p->tot_len);
     pbuf_free(p);
     return ERR_OK;
 }
@@ -177,7 +179,7 @@ static void firebase_on_err(void *arg, err_t err)
     next_retry = make_timeout_time_us(RETRY_DELAY_US);
 }
 
-static err_t firebase_on_connected(void *arg, struct tcp_pcb *tpcb, err_t err)
+static err_t firebase_on_connected(void *arg, struct altcp_pcb *pcb, err_t err)
 {
     (void)arg;
 
@@ -218,18 +220,18 @@ static err_t firebase_on_connected(void *arg, struct tcp_pcb *tpcb, err_t err)
         return ERR_BUF;
     }
 
-    err_t wr = tcp_write(tpcb, request, (u16_t)request_len, TCP_WRITE_FLAG_COPY);
+    err_t wr = altcp_write(pcb, request, (u16_t)request_len, TCP_WRITE_FLAG_COPY);
     if (wr != ERR_OK)
     {
-        printf("Firebase tcp_write erro: %d\n", wr);
+        printf("Firebase altcp_write erro: %d\n", wr);
         firebase_schedule_retry();
         return wr;
     }
 
-    err_t out = tcp_output(tpcb);
+    err_t out = altcp_output(pcb);
     if (out != ERR_OK)
     {
-        printf("Firebase tcp_output erro: %d\n", out);
+        printf("Firebase altcp_output erro: %d\n", out);
         firebase_schedule_retry();
         return out;
     }
@@ -252,22 +254,33 @@ static void firebase_dns_found(const char *name, const ip_addr_t *ipaddr, void *
 
     fb_ip = *ipaddr;
 
-    fb_pcb = tcp_new_ip_type(IP_GET_TYPE(&fb_ip));
+    if (fb_tls_cfg == NULL)
+    {
+        fb_tls_cfg = altcp_tls_create_config_client(NULL, 0);
+        if (fb_tls_cfg == NULL)
+        {
+            printf("Firebase TLS config falhou\n");
+            firebase_schedule_retry();
+            return;
+        }
+    }
+
+    fb_pcb = altcp_tls_new(fb_tls_cfg, IP_GET_TYPE(&fb_ip));
     if (fb_pcb == NULL)
     {
-        printf("Firebase tcp_new falhou\n");
+        printf("Firebase altcp_tls_new falhou\n");
         firebase_schedule_retry();
         return;
     }
 
-    tcp_arg(fb_pcb, NULL);
-    tcp_recv(fb_pcb, firebase_on_recv);
-    tcp_err(fb_pcb, firebase_on_err);
+    altcp_arg(fb_pcb, NULL);
+    altcp_recv(fb_pcb, firebase_on_recv);
+    altcp_err(fb_pcb, firebase_on_err);
 
-    err_t c = tcp_connect(fb_pcb, &fb_ip, FIREBASE_PORT, firebase_on_connected);
+    err_t c = altcp_connect(fb_pcb, &fb_ip, FIREBASE_PORT, firebase_on_connected);
     if (c != ERR_OK)
     {
-        printf("Firebase tcp_connect erro: %d\n", c);
+        printf("Firebase altcp_connect erro: %d\n", c);
         firebase_schedule_retry();
         return;
     }

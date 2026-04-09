@@ -13,6 +13,10 @@
 #include "joystick.h"
 #include "utils.h"
 
+#ifndef CYW43_COUNTRY_BRAZIL
+#define CYW43_COUNTRY_BRAZIL CYW43_COUNTRY('B', 'R', 0)
+#endif
+
 int main()
 {
     stdio_init_all();
@@ -20,27 +24,35 @@ int main()
 
     printf("BOOT OK\n");
 
-    if (cyw43_arch_init())
+    if (cyw43_arch_init_with_country(CYW43_COUNTRY_BRAZIL))
     {
-        printf("Erro WiFi\n");
+        printf("Erro WiFi (init country BR)\n");
         return -1;
     }
 
     wifi_init();
+    printf("Main -> WiFi OK\n");
 
     pir_init();
+    printf("Main -> PIR OK\n");
 
     audio_init();
+    printf("Main -> Audio OK\n");
 
     buttons_init();
+    printf("Main -> Buttons OK\n");
 
     joystick_init();
+    printf("Main -> Joystick OK\n");
 
     display_init();
+    printf("Main -> Display OK\n");
 
     alarm_init();
+    printf("Main -> Alarm OK\n");
 
     watchdog_enable(15000, 1);
+    printf("Main -> Watchdog OK\n");
 
     while (true)
     {

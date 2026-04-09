@@ -52,6 +52,7 @@ add_executable(projeto_final
     src/joystick.c
     src/utils.c
     src/ssd1306.c
+    src/mbedtls_compat.c
 )
 
 pico_set_program_name(projeto_final "projeto_final")
@@ -69,6 +70,8 @@ target_link_libraries(projeto_final
         hardware_sync
         hardware_i2c
         pico_cyw43_arch_lwip_poll
+        pico_lwip_mbedtls
+        pico_mbedtls
         hardware_watchdog
 )
 

@@ -2,12 +2,12 @@
 #define CONFIG_H
 
 // WIFI
-#define WIFI_SSID "GCNET-Alencar"
-#define WIFI_PASS "11223344"
+#define WIFI_SSID "Giovanna-4G"
+#define WIFI_PASS "vintelitros"
 
 // FIREBASE
 #define FIREBASE_HOST "projeto-final-5eb42-default-rtdb.firebaseio.com"
-#define FIREBASE_PORT 80
+#define FIREBASE_PORT 443
 
 // PINOS
 #define PIR_PIN 8

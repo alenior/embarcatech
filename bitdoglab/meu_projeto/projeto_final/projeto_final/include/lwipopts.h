@@ -8,6 +8,9 @@
 
 #define LWIP_TCP 1
 #define LWIP_DNS 1
+#define LWIP_ALTCP 1
+#define LWIP_ALTCP_TLS 1
+#define LWIP_ALTCP_TLS_MBEDTLS 1
 
 #define MEM_LIBC_MALLOC 1
 #define MEMP_MEM_MALLOC 1
