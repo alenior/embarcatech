@@ -1,24 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-
 import 'features/status/status_page.dart';
 import 'features/history/history_page.dart';
 import 'features/control/control_page.dart';
-import 'features/notifications/notification_service.dart';
-
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
-  await NotificationService.instance.init();
-
-  // Garante auth para ler/escrever RTDB
-  if (FirebaseAuth.instance.currentUser == null) {
-    await FirebaseAuth.instance.signInAnonymously();
-  }
-
-  runApp(const ProjetoFinalApp());
-}
 
 class ProjetoFinalApp extends StatelessWidget {
   const ProjetoFinalApp({super.key});
@@ -27,6 +10,7 @@ class ProjetoFinalApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Projeto Final',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.indigo),
       home: const MainTabsPage(),
     );

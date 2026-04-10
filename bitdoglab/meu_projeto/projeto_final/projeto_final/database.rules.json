@@ -1,0 +1,35 @@
+{
+    "rules": {
+        "devices": {
+            "bitdoglab-01": {
+                "alarm_status": {
+                    ".read": "auth != null",
+                    ".write": "auth != null"
+                },
+                "alarm": {
+                    ".read": "auth != null",
+                    ".write": "auth != null",
+                    ".indexOn": [
+                        "ts"
+                    ]
+                },
+                "control": {
+                    ".read": "auth != null",
+                    ".write": "auth != null",
+                    "desired_state": {
+                        ".validate": "newData.isString() && (newData.val() === 'ARMED' || newData.val() === 'DISARMED')"
+                    },
+                    "updated_at": {
+                        ".validate": "newData.isNumber()"
+                    },
+                    "source": {
+                        ".validate": "newData.isString() && newData.val().length <= 64"
+                    },
+                    "$other": {
+                        ".validate": false
+                    }
+                }
+            }
+        }
+    }
+}

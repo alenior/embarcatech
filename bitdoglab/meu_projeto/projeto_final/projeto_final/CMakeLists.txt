@@ -53,6 +53,8 @@ add_executable(projeto_final
     src/utils.c
     src/ssd1306.c
     src/mbedtls_compat.c
+    src/control.c
+    src/time_sync.c
 )
 
 pico_set_program_name(projeto_final "projeto_final")

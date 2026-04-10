@@ -9,6 +9,20 @@
 #define FIREBASE_HOST "projeto-final-5eb42-default-rtdb.firebaseio.com"
 #define FIREBASE_PORT 443
 
+// Token de autenticação do Realtime Database (Opção B)
+// Ex.: Legacy Database Secret (temporário/protótipo) OU idToken válido.
+#define FIREBASE_AUTH_TOKEN "RIyKQ3tPMDn01Izrrbmo4MyUsmcpTc2OeRl633RX"
+
+// DEVICE / FW
+#define DEVICE_ID "bitdoglab-01"
+#define FW_VERSION "0.2.0"
+
+// FIREBASE PATHS
+#define FB_ROOT "devices/" DEVICE_ID
+#define FB_STATUS_PATH FB_ROOT "/alarm_status/current"
+#define FB_EVENTS_PATH FB_ROOT "/alarm"
+#define FB_CONTROL_PATH FB_ROOT "/control"
+
 // PINOS
 #define PIR_PIN 8
 #define AUDIO_PIN 28

@@ -1,12 +1,14 @@
 #include "alarm.h"
 #include "display.h"
 #include "firebase.h"
+#include "control.h"
 #include "pir.h"
 #include "audio.h"
 #include "buttons.h"
 #include "config.h"
 
 #include <stdio.h>
+#include <stdbool.h>
 
 #include "hardware/gpio.h"
 #include "pico/stdlib.h"
@@ -53,7 +55,7 @@ static const char *status_text(void)
     return "ALERTA";
 }
 
-void alarm_init()
+void alarm_init(void)
 {
     gpio_init(LED_R);
     gpio_init(LED_G);
@@ -66,10 +68,12 @@ void alarm_init()
     set_leds_for_state(state);
     display_set_status(status_text());
     firebase_set_status(status_text());
+    firebase_log("ARMADO", "SYSTEM");
+
     printf("Alarm init\n");
 }
 
-void alarm_task()
+void alarm_task(void)
 {
     static absolute_time_t last_run = {0};
 
@@ -78,6 +82,21 @@ void alarm_task()
 
     last_run = get_absolute_time();
 
+    // 1) aplica comando remoto pendente (do Firebase control)
+    unsigned int cmd_ts = 0;
+    control_cmd_t cmd = control_take_pending(&cmd_ts);
+
+    if (cmd == CONTROL_DISARM && state != DISARMED)
+    {
+        state = DISARMED;
+        trigger_type = TRIGGER_NONE;
+    }
+    else if (cmd == CONTROL_ARM && state == DISARMED)
+    {
+        state = ARMED;
+    }
+
+    // 2) leitura sensores locais
     bool pir = pir_get();
     bool sound = audio_detect();
 
