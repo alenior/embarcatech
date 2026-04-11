@@ -211,3 +211,7 @@ void ssd1306_draw_string(int x, int y, const char *str)
         x += 6;
     }
 }
+void ssd1306_set_invert(bool invert)
+{
+    ssd1306_cmd(invert ? 0xA7 : 0xA6);
+}

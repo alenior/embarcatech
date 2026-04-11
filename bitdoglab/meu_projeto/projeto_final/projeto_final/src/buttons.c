@@ -1,12 +1,12 @@
 #include <stdio.h>
 #include "buttons.h"
+#include "config.h"
 #include "pico/stdlib.h"
-
-#define BTN_A 5
-#define BTN_B 6
 
 static absolute_time_t last_press_a;
 static absolute_time_t last_press_b;
+static bool last_raw_a = true;
+static bool last_raw_b = true;
 
 void buttons_init()
 {
@@ -25,28 +25,32 @@ void buttons_init()
 
 bool button_a_pressed()
 {
-    if (!gpio_get(BTN_A))
+    bool raw = gpio_get(BTN_A);
+    bool pressed = false;
+
+    if (last_raw_a && !raw && absolute_time_diff_us(last_press_a, get_absolute_time()) > 80000)
     {
-        if (absolute_time_diff_us(last_press_a, get_absolute_time()) > 200000)
-        {
-            last_press_a = get_absolute_time();
-            return true;
-        }
+        last_press_a = get_absolute_time();
+        pressed = true;
     }
-    return false;
+
+    last_raw_a = raw;
+    return pressed;
 }
 
 bool button_b_pressed()
 {
-    if (!gpio_get(BTN_B))
+    bool raw = gpio_get(BTN_B);
+    bool pressed = false;
+
+    if (last_raw_b && !raw && absolute_time_diff_us(last_press_b, get_absolute_time()) > 80000)
     {
-        if (absolute_time_diff_us(last_press_b, get_absolute_time()) > 200000)
-        {
-            last_press_b = get_absolute_time();
-            return true;
-        }
+        last_press_b = get_absolute_time();
+        pressed = true;
     }
-    return false;
+
+    last_raw_b = raw;
+    return pressed;
 }
 
 bool buttons_ok(void)
