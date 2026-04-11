@@ -9,7 +9,6 @@
 #define FIREBASE_HOST "projeto-final-5eb42-default-rtdb.firebaseio.com"
 #define FIREBASE_PORT 443
 
-// Token de autenticação do Realtime Database (Opção B)
 // Ex.: Legacy Database Secret (temporário/protótipo) OU idToken válido.
 #define FIREBASE_AUTH_TOKEN "RIyKQ3tPMDn01Izrrbmo4MyUsmcpTc2OeRl633RX"
 

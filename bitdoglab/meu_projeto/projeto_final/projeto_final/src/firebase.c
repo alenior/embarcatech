@@ -68,6 +68,7 @@ static bool fb_headers_done = false;
 static char fb_resp[RESPONSE_BUFFER_SIZE];
 static size_t fb_resp_len = 0;
 static unsigned int last_control_updated_at = 0;
+static control_cmd_t last_control_cmd = CONTROL_NONE;
 
 static int queue_count(void)
 {
@@ -161,11 +162,13 @@ static bool json_get_uint(const char *json, const char *key, unsigned int *out)
         return false;
 
     char *endptr = NULL;
-    unsigned long ul = strtoul(v, &endptr, 10);
+    long sl = strtol(v, &endptr, 10);
     if (v == endptr)
         return false;
+    if (sl < 0)
+        return false;
 
-    *out = (unsigned int)ul;
+    *out = (unsigned int)sl;
     return true;
 }
 
@@ -303,12 +306,19 @@ static err_t firebase_on_recv(void *arg, struct altcp_pcb *pcb, struct pbuf *p, 
                 unsigned int updated_at = 0;
                 if (parse_control_payload(fb_resp, &cmd, &updated_at))
                 {
-                    if (updated_at > last_control_updated_at)
+                    bool is_newer = updated_at > last_control_updated_at;
+                    bool cmd_changed = cmd != last_control_cmd;
+                    if (is_newer || cmd_changed)
                     {
                         last_control_updated_at = updated_at;
+                        last_control_cmd = cmd;
                         control_set_pending(cmd, updated_at);
                         printf("Control atualizado: cmd=%d ts=%u\n", (int)cmd, updated_at);
                     }
+                }
+                else
+                {
+                    printf("Control payload inválido: %s\n", fb_resp);
                 }
             }
             else if (fb_http_status == 401 || fb_http_status == 403)
@@ -539,6 +549,7 @@ void firebase_init(void)
     fb_resp[0] = '\0';
     next_retry = make_timeout_time_us(0);
     next_control_poll = make_timeout_time_us(1500000);
+    last_control_cmd = CONTROL_NONE;
 
     printf("Firebase init\n");
 }
