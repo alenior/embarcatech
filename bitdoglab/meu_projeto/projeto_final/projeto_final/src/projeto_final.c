@@ -3,10 +3,12 @@
 #include "pico/stdlib.h"
 #include "pico/cyw43_arch.h"
 #include "hardware/watchdog.h"
+#include "hardware/gpio.h"
 
 #include "wifi.h"
 #include "firebase.h"
 #include "control.h"
+#include "config.h"
 #include "pir.h"
 #include "audio.h"
 #include "buttons.h"
@@ -14,12 +16,23 @@
 #include "display.h"
 #include "alarm.h"
 
+#ifndef MATRIX_PIN
+#define MATRIX_PIN 7
+#endif
+
 int main(void)
 {
     stdio_init_all();
     sleep_ms(1200);
 
     printf("BOOT OK\n");
+
+    // força linha de dados da matriz WS2812 em nível baixo para evitar LED preso aceso
+    gpio_init(MATRIX_PIN);
+    gpio_set_dir(MATRIX_PIN, GPIO_OUT);
+    gpio_put(MATRIX_PIN, 0);
+    gpio_pull_down(MATRIX_PIN);
+
     printf("Conectando WiFi...\n");
     printf("Dica: Pico W suporta apenas rede 2.4GHz\n");
 
