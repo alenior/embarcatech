@@ -7,14 +7,34 @@ const String _deviceId = 'bitdoglab-01';
 class StatusPage extends StatelessWidget {
   const StatusPage({super.key});
 
-  String formatTs(dynamic ts) {
-    if (ts == null) return '-';
-    final n = (ts is num) ? ts.toInt() : int.tryParse(ts.toString());
-    if (n == null) return '-';
+  String formatTs(dynamic rawTsUnixMs, dynamic rawTsFallback) {
+    int? parse(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toInt();
+      return int.tryParse(v.toString());
+    }
 
-    // espera epoch ms
-    final dt = DateTime.fromMillisecondsSinceEpoch(n);
-    return DateFormat('dd/MM/yyyy HH:mm:ss').format(dt);
+    // 1) prioridade para timestamp real (server/app)
+    final tsUnix = parse(rawTsUnixMs);
+
+    // 2) fallback para ts legado do firmware
+    final tsAny = parse(rawTsFallback);
+
+    // 01/01/2000 em ms -> limiar para considerar epoch real
+    const minEpochMs = 946684800000;
+
+    if (tsUnix != null && tsUnix >= minEpochMs) {
+      final dt = DateTime.fromMillisecondsSinceEpoch(tsUnix).toLocal();
+      return DateFormat('dd/MM/yyyy HH:mm:ss').format(dt);
+    }
+
+    if (tsAny != null && tsAny >= minEpochMs) {
+      final dt = DateTime.fromMillisecondsSinceEpoch(tsAny).toLocal();
+      return DateFormat('dd/MM/yyyy HH:mm:ss').format(dt);
+    }
+
+    // Não inventar data errada se vier uptime do firmware
+    return 'Sem horário real (ts do dispositivo)';
   }
 
   @override
@@ -70,7 +90,7 @@ class StatusPage extends StatelessWidget {
                 child: ListTile(
                   leading: const Icon(Icons.schedule),
                   title: const Text('Data/Hora'),
-                  subtitle: Text(formatTs(data['ts_unix_ms'] ?? data['ts'])),
+                  subtitle: Text(formatTs(data['ts_unix_ms'], data['ts'])),
                 ),
               ),
               Card(
