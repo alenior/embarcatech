@@ -28,16 +28,18 @@ static display_mode_t mode = DISPLAY_MODE_STATUS;
 static bool msg_invert = false;
 static int msg_offset = 0;
 
-static const char *msg_words[] = {
-    "EMBARCATECH",
-    "2026",
-    "PROJETO",
-    "FINAL",
-    "OBRIGADO",
-    "POR",
-    "ASSISTIR!"};
+typedef struct
+{
+    const char *line1;
+    const char *line2;
+} msg_page_t;
 
-#define MSG_WORDS_COUNT ((int)(sizeof(msg_words) / sizeof(msg_words[0])))
+static const msg_page_t msg_pages[] = {
+    {"EMBARCATECH", "2026"},
+    {"PROJETO", "FINAL"},
+    {"OBRIGADO POR", "ASSISTIR!"}};
+
+#define MSG_PAGE_COUNT ((int)(sizeof(msg_pages) / sizeof(msg_pages[0])))
 
 static void format_uptime(char *out, size_t out_sz)
 {
@@ -72,14 +74,15 @@ static void render_status_screen(void)
 static void render_message_screen(void)
 {
     ssd1306_clear();
-    ssd1306_draw_string(5, 0, "MENSAGEM IMPORTANTE:");
+    ssd1306_draw_string(30, 0, "MENSAGEM:");
 
-    for (int i = 0; i < 3; i++)
-    {
-        int idx = msg_offset + i;
-        if (idx < MSG_WORDS_COUNT)
-            ssd1306_draw_string(0, 16 + i * 16, msg_words[idx]);
-    }
+    const msg_page_t *p = &msg_pages[msg_offset];
+    ssd1306_draw_string(0, 20, p->line1);
+    ssd1306_draw_string(0, 40, p->line2);
+
+    char page_info[20];
+    snprintf(page_info, sizeof(page_info), "%d/%d", msg_offset + 1, MSG_PAGE_COUNT);
+    ssd1306_draw_string(96, 54, page_info);
 
     ssd1306_show();
 }
@@ -140,7 +143,7 @@ void display_task()
                     last_scroll = get_absolute_time();
                     dirty = true;
                 }
-                else if (y < 1000 && msg_offset < (MSG_WORDS_COUNT - 3))
+                else if (y < 1000 && msg_offset < (MSG_PAGE_COUNT - 1))
                 {
                     msg_offset++;
                     last_scroll = get_absolute_time();

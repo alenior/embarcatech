@@ -208,7 +208,12 @@ void alarm_task(void)
         break;
 
     case ARMED:
-        if (pir)
+        if (buttons_ok())
+        {
+            state = DISARMED;
+            trigger_type = TRIGGER_NONE;
+        }
+        else if (pir)
         {
             trigger_type = TRIGGER_MOTION;
             state = TRIGGERED;
