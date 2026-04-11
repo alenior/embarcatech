@@ -10,6 +10,7 @@ static uint16_t noise_floor = 0;
 static bool initialized = false;
 static absolute_time_t last_trigger = {0};
 static absolute_time_t arm_grace_until = {0};
+static absolute_time_t last_debug_log = {0};
 
 #define SOUND_THRESHOLD_MIN AUDIO_TRIGGER_MIN
 #define NOISE_MULTIPLIER AUDIO_NOISE_MULTIPLIER
@@ -93,6 +94,15 @@ bool audio_detect(void)
     if (dynamic_threshold < SOUND_THRESHOLD_MIN)
         dynamic_threshold = SOUND_THRESHOLD_MIN;
 
+#if AUDIO_DEBUG_LOG
+    if (absolute_time_diff_us(last_debug_log, get_absolute_time()) >= AUDIO_DEBUG_LOG_INTERVAL_US)
+    {
+        last_debug_log = get_absolute_time();
+        printf("AUDIO raw=%u base=%u diff=%d noise=%u thr=%d hits=%d\n",
+               v, baseline, diff, noise_floor, dynamic_threshold, consecutive_hits);
+    }
+#endif
+
     if (diff >= dynamic_threshold)
     {
         consecutive_hits++;
@@ -108,9 +118,14 @@ bool audio_detect(void)
         if (absolute_time_diff_us(last_trigger, get_absolute_time()) < COOLDOWN_US)
             return false;
 
+        uint32_t trigger_energy = energy_acc;
+
         consecutive_hits = 0;
         energy_acc = 0;
         last_trigger = get_absolute_time();
+#if AUDIO_DEBUG_LOG
+        printf("AUDIO TRIGGER diff=%d thr=%d energy=%lu\n", diff, dynamic_threshold, (unsigned long)trigger_energy);
+#endif
         return true;
     }
 
