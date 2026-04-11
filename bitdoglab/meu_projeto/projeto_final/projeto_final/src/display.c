@@ -72,7 +72,7 @@ static void render_status_screen(void)
 static void render_message_screen(void)
 {
     ssd1306_clear();
-    ssd1306_draw_string(0, 20, "MENSAGEM PARA VOCÊ:");
+    ssd1306_draw_string(15, 0, "MENSAGEM PARA VOCÊ:");
 
     for (int i = 0; i < 3; i++)
     {
@@ -131,7 +131,7 @@ void display_task()
         }
         else
         {
-            uint16_t y = joystick_read_y();
+            uint16_t y = joystick_read_x();
             if (absolute_time_diff_us(last_scroll, get_absolute_time()) > 180000)
             {
                 if (y > 3000 && msg_offset > 0)
@@ -148,7 +148,7 @@ void display_task()
                 }
             }
 
-            uint16_t x = joystick_read_x();
+            uint16_t x = joystick_read_y();
             if (absolute_time_diff_us(last_invert, get_absolute_time()) > 250000)
             {
                 if (x < 1000 || x > 3000)

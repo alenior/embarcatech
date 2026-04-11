@@ -2,6 +2,7 @@
 #include "display.h"
 #include "firebase.h"
 #include "control.h"
+#include "matrix.h"
 #include "pir.h"
 #include "audio.h"
 #include "buttons.h"
@@ -139,8 +140,10 @@ void alarm_init(void)
     pwm_pin_init(LED_G);
     pwm_pin_init(LED_B);
     buzzer_init();
+    matrix_init();
 
     state_since = get_absolute_time();
+    matrix_set_pattern(MATRIX_PATTERN_ARMED);
     update_effects();
     display_set_status(status_text());
     firebase_set_status(status_text());
@@ -185,7 +188,7 @@ void alarm_task(void)
 
     static absolute_time_t last_run = {0};
 
-    if (absolute_time_diff_us(last_run, get_absolute_time()) < 50000)
+    if (absolute_time_diff_us(last_run, get_absolute_time()) < 20000)
         return;
 
     last_run = get_absolute_time();
@@ -236,15 +239,30 @@ void alarm_task(void)
         firebase_set_status(status);
 
         if (state == DISARMED)
+        {
+            matrix_set_pattern(MATRIX_PATTERN_DISARMED);
             firebase_log("DESARMADO", "SYSTEM");
+        }
         else if (state == ARMED)
+        {
+            matrix_set_pattern(MATRIX_PATTERN_ARMED);
             firebase_log("ARMADO", "SYSTEM");
+        }
         else if (trigger_type == TRIGGER_MOTION)
+        {
+            matrix_set_pattern(MATRIX_PATTERN_TRIGGERED);
             firebase_log("ALERTA - MOVIMENTO", "MOTION");
+        }
         else if (trigger_type == TRIGGER_SOUND)
+        {
+            matrix_set_pattern(MATRIX_PATTERN_TRIGGERED);
             firebase_log("ALERTA - SOM", "SOUND");
+        }
         else
+        {
+            matrix_set_pattern(MATRIX_PATTERN_TRIGGERED);
             firebase_log("ALERTA", "ALARM");
+        }
     }
     update_effects();
 }

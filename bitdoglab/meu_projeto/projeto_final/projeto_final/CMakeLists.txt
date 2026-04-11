@@ -54,6 +54,7 @@ add_executable(projeto_final
     src/ssd1306.c
     src/mbedtls_compat.c
     src/control.c
+    src/matrix.c
     src/time_sync.c
 )
 
