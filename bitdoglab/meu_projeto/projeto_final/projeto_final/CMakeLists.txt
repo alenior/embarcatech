@@ -76,6 +76,7 @@ target_link_libraries(projeto_final
         pico_mbedtls
         hardware_watchdog
         hardware_gpio
+        hardware_pwm
 )
 
 # Add the standard include files to the build

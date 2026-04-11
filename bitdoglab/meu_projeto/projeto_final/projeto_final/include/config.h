@@ -36,6 +36,8 @@
 #define LED_G 11
 #define LED_B 12
 #define MATRIX_PIN 7
+#define BUZZER_PIN 21
+#define BUZZER_PIN2 10
 
 // OLED
 #define I2C_PORT i2c1

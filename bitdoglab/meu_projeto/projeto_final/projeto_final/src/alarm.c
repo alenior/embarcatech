@@ -11,6 +11,7 @@
 #include <stdbool.h>
 
 #include "hardware/gpio.h"
+#include "hardware/pwm.h"
 #include "pico/stdlib.h"
 
 typedef enum
@@ -27,15 +28,92 @@ typedef enum
     TRIGGER_SOUND
 } trigger_type_t;
 
+#define LED_PWM_WRAP 1000
+
+#ifndef BUZZER_PIN
+#define BUZZER_PIN 21
+#endif
+
 static state_t state = ARMED;
 static state_t last = -1;
 static trigger_type_t trigger_type = TRIGGER_NONE;
 
-static void set_leds_for_state(state_t s)
+static absolute_time_t state_since = {0};
+
+static void pwm_pin_init(uint pin)
 {
-    gpio_put(LED_R, s == TRIGGERED);
-    gpio_put(LED_G, s == DISARMED);
-    gpio_put(LED_B, s == ARMED);
+    gpio_set_function(pin, GPIO_FUNC_PWM);
+    uint slice = pwm_gpio_to_slice_num(pin);
+    pwm_config cfg = pwm_get_default_config();
+    pwm_config_set_clkdiv(&cfg, 125.0f);
+    pwm_config_set_wrap(&cfg, LED_PWM_WRAP);
+    pwm_init(slice, &cfg, true);
+    pwm_set_gpio_level(pin, 0);
+}
+
+static void led_set(uint16_t r, uint16_t g, uint16_t b)
+{
+    pwm_set_gpio_level(LED_R, r);
+    pwm_set_gpio_level(LED_G, g);
+    pwm_set_gpio_level(LED_B, b);
+}
+
+static void buzzer_init(void)
+{
+    gpio_set_function(BUZZER_PIN, GPIO_FUNC_PWM);
+    uint slice = pwm_gpio_to_slice_num(BUZZER_PIN);
+    pwm_config cfg = pwm_get_default_config();
+    pwm_config_set_clkdiv(&cfg, 125.0f); // 1 MHz tick
+    pwm_config_set_wrap(&cfg, 1000);
+    pwm_init(slice, &cfg, true);
+    pwm_set_gpio_level(BUZZER_PIN, 0);
+}
+
+static void buzzer_tone(uint16_t hz)
+{
+    uint slice = pwm_gpio_to_slice_num(BUZZER_PIN);
+    if (hz == 0)
+    {
+        pwm_set_gpio_level(BUZZER_PIN, 0);
+        return;
+    }
+
+    uint32_t top = 1000000u / hz;
+    if (top < 8)
+        top = 8;
+    if (top > 65535)
+        top = 65535;
+
+    pwm_set_wrap(slice, (uint16_t)(top - 1));
+    pwm_set_gpio_level(BUZZER_PIN, (uint16_t)(top / 2));
+}
+
+static void update_effects(void)
+{
+    uint32_t elapsed_ms = to_ms_since_boot(get_absolute_time()) - to_ms_since_boot(state_since);
+
+    if (state == DISARMED)
+    {
+        uint32_t phase = elapsed_ms % 2000;
+        uint16_t level = (phase < 1000) ? (uint16_t)phase : (uint16_t)(2000 - phase);
+        led_set(0, level, 0);
+        buzzer_tone(0);
+        return;
+    }
+
+    if (state == ARMED)
+    {
+        led_set(0, 0, 700);
+
+        bool beep_on = (elapsed_ms < 120) || (elapsed_ms >= 220 && elapsed_ms < 340);
+        buzzer_tone(beep_on ? 2400 : 0);
+        return;
+    }
+
+    // TRIGGERED
+    bool blink_on = ((elapsed_ms / 150) % 2) == 0;
+    led_set(blink_on ? 1000 : 120, 0, 0);
+    buzzer_tone(blink_on ? 1800 : 0);
 }
 
 static const char *status_text(void)
@@ -57,15 +135,13 @@ static const char *status_text(void)
 
 void alarm_init(void)
 {
-    gpio_init(LED_R);
-    gpio_init(LED_G);
-    gpio_init(LED_B);
+    pwm_pin_init(LED_R);
+    pwm_pin_init(LED_G);
+    pwm_pin_init(LED_B);
+    buzzer_init();
 
-    gpio_set_dir(LED_R, GPIO_OUT);
-    gpio_set_dir(LED_G, GPIO_OUT);
-    gpio_set_dir(LED_B, GPIO_OUT);
-
-    set_leds_for_state(state);
+    state_since = get_absolute_time();
+    update_effects();
     display_set_status(status_text());
     firebase_set_status(status_text());
     firebase_log("ARMADO", "SYSTEM");
@@ -153,7 +229,7 @@ void alarm_task(void)
     if (state != last)
     {
         last = state;
-        set_leds_for_state(state);
+        state_since = get_absolute_time();
 
         const char *status = status_text();
         display_set_status(status);
@@ -170,4 +246,5 @@ void alarm_task(void)
         else
             firebase_log("ALERTA", "ALARM");
     }
+    update_effects();
 }
