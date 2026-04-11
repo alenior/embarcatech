@@ -75,26 +75,43 @@ void alarm_init(void)
 
 void alarm_task(void)
 {
+    // 1) aplica comando remoto pendente (do Firebase control)
+    unsigned int cmd_ts = 0;
+    control_cmd_t cmd = CONTROL_NONE;
+    unsigned int cmd_updated_at = 0;
+    if (control_take_pending(&cmd, &cmd_updated_at))
+    {
+        (void)cmd_updated_at;
+        if (cmd == CONTROL_ARM && state == DISARMED)
+        {
+            state = ARMED;
+            trigger_type = TRIGGER_NONE;
+        }
+        else if (cmd == CONTROL_DISARM)
+        {
+            state = DISARMED;
+            trigger_type = TRIGGER_NONE;
+        }
+    }
+
+    if (cmd == CONTROL_DISARM && state != DISARMED)
+    {
+        state = DISARMED;
+        trigger_type = TRIGGER_NONE;
+        printf("ALARM remote -> DISARMED (ts=%u)\n", cmd_ts);
+    }
+    else if (cmd == CONTROL_ARM && state == DISARMED)
+    {
+        state = ARMED;
+        printf("ALARM remote -> ARMED (ts=%u)\n", cmd_ts);
+    }
+
     static absolute_time_t last_run = {0};
 
     if (absolute_time_diff_us(last_run, get_absolute_time()) < 50000)
         return;
 
     last_run = get_absolute_time();
-
-    // 1) aplica comando remoto pendente (do Firebase control)
-    unsigned int cmd_ts = 0;
-    control_cmd_t cmd = control_take_pending(&cmd_ts);
-
-    if (cmd == CONTROL_DISARM && state != DISARMED)
-    {
-        state = DISARMED;
-        trigger_type = TRIGGER_NONE;
-    }
-    else if (cmd == CONTROL_ARM && state == DISARMED)
-    {
-        state = ARMED;
-    }
 
     // 2) leitura sensores locais
     bool pir = pir_get();

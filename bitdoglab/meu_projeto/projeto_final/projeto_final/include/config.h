@@ -15,13 +15,13 @@
 
 // DEVICE / FW
 #define DEVICE_ID "bitdoglab-01"
-#define FW_VERSION "0.2.0"
+#define FW_VERSION "1.0.0"
 
 // FIREBASE PATHS
 #define FB_ROOT "devices/" DEVICE_ID
-#define FB_STATUS_PATH FB_ROOT "/alarm_status/current"
-#define FB_EVENTS_PATH FB_ROOT "/alarm"
-#define FB_CONTROL_PATH FB_ROOT "/control"
+#define FB_EVENTS_PATH "alarm"
+#define FB_STATUS_PATH "alarm_status/current"
+#define FB_CONTROL_PATH "devices/" DEVICE_ID "/control"
 
 // PINOS
 #define PIR_PIN 8

@@ -73,6 +73,7 @@ static int queue_count(void)
 {
     if (tail >= head)
         return tail - head;
+
     return QUEUE_SIZE - head + tail;
 }
 
@@ -100,6 +101,7 @@ static const char *skip_ws(const char *p)
 {
     while (p && *p && isspace((unsigned char)*p))
         p++;
+
     return p;
 }
 
@@ -118,11 +120,13 @@ static bool json_find_key(const char *json, const char *key, const char **value_
         p = skip_ws(p);
         if (*p != ':')
             continue;
+
         p++;
         p = skip_ws(p);
         *value_start = p;
         return true;
     }
+
     return false;
 }
 
@@ -140,10 +144,12 @@ static bool json_get_string(const char *json, const char *key, char *out, size_t
     {
         if (*v == '\\' && v[1] != '\0')
             v++;
+
         out[i++] = *v++;
     }
     if (*v != '"')
         return false;
+
     out[i] = '\0';
     return true;
 }
@@ -158,6 +164,7 @@ static bool json_get_uint(const char *json, const char *key, unsigned int *out)
     unsigned long ul = strtoul(v, &endptr, 10);
     if (v == endptr)
         return false;
+
     *out = (unsigned int)ul;
     return true;
 }
@@ -176,17 +183,11 @@ static bool parse_control_payload(const char *json, control_cmd_t *cmd, unsigned
         return false;
 
     if (strcmp(desired, "ARMED") == 0)
-    {
         *cmd = CONTROL_ARM;
-    }
     else if (strcmp(desired, "DISARMED") == 0)
-    {
         *cmd = CONTROL_DISARM;
-    }
     else
-    {
         return false;
-    }
 
     *updated_at = ts;
     return true;
@@ -283,7 +284,6 @@ static err_t firebase_on_recv(void *arg, struct altcp_pcb *pcb, struct pbuf *p, 
             if (fb_http_status == 401 || fb_http_status == 403)
             {
                 printf("Firebase auth falhou (status=%d) path=%s\n", fb_http_status, queue[head].path);
-                // evita fila lotada em loop
                 pop_event();
                 next_retry = make_timeout_time_us(AUTH_FAIL_BACKOFF_US);
                 firebase_reset_connection();
@@ -552,6 +552,7 @@ void firebase_task(void)
             last_wifi_wait_log = get_absolute_time();
             printf("Firebase aguardando WiFi...\n");
         }
+
         firebase_reset_connection();
         return;
     }

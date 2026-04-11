@@ -35,8 +35,11 @@ int main(void)
     else
         printf("Main -> WiFi inicial não conectado (reconnect em background)\n");
 
-    control_init();
     firebase_init();
+    printf("Main -> Firebase OK\n");
+
+    control_init();
+    printf("Main -> Control OK\n");
 
     pir_init();
     printf("Main -> PIR OK\n");
@@ -62,8 +65,8 @@ int main(void)
     while (true)
     {
         wifi_task();
-        firebase_fetch_control();
         firebase_task();
+        firebase_fetch_control();
         alarm_task();
         display_task();
 
