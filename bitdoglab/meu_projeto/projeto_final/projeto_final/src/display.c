@@ -72,7 +72,7 @@ static void render_status_screen(void)
 static void render_message_screen(void)
 {
     ssd1306_clear();
-    ssd1306_draw_string(15, 0, "MENSAGEM PARA VOCÊ:");
+    ssd1306_draw_string(5, 0, "MENSAGEM IMPORTANTE:");
 
     for (int i = 0; i < 3; i++)
     {

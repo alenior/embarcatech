@@ -58,6 +58,8 @@ add_executable(projeto_final
     src/time_sync.c
 )
 
+pico_generate_pio_header(projeto_final ${CMAKE_CURRENT_LIST_DIR}/src/ws2812.pio)
+
 pico_set_program_name(projeto_final "projeto_final")
 pico_set_program_version(projeto_final "0.1")
 
@@ -78,6 +80,7 @@ target_link_libraries(projeto_final
         hardware_watchdog
         hardware_gpio
         hardware_pwm
+        hardware_pio
 )
 
 # Add the standard include files to the build

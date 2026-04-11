@@ -1,9 +1,10 @@
 #include "matrix.h"
 #include "config.h"
 
-#include "hardware/gpio.h"
-#include "hardware/sync.h"
-#include "pico/time.h"
+#include "hardware/pio.h"
+#include "hardware/clocks.h"
+#include "pico/stdlib.h"
+#include "ws2812.pio.h"
 
 #define MATRIX_W 5
 #define MATRIX_ROWS 5
@@ -12,49 +13,29 @@
 #define MATRIX_GREEN_LEVEL 20
 #define MATRIX_BLUE_LEVEL 20
 
+static PIO g_pio = pio0;
+static uint g_sm = 0;
+
 typedef struct
 {
-    uint8_t g;
     uint8_t r;
+    uint8_t g;
     uint8_t b;
-} grb_t;
+} rgb_t;
 
-static grb_t leds[MATRIX_N];
+static rgb_t leds[MATRIX_N];
 
-static inline void ws_send_bit(bool one)
+static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b)
 {
-    gpio_put(MATRIX_PIN, 1);
-    if (one)
-    {
-        busy_wait_at_least_cycles(100); // ~0.8us @125MHz
-        gpio_put(MATRIX_PIN, 0);
-        busy_wait_at_least_cycles(56); // ~0.45us
-    }
-    else
-    {
-        busy_wait_at_least_cycles(50); // ~0.4us
-        gpio_put(MATRIX_PIN, 0);
-        busy_wait_at_least_cycles(106); // ~0.85us
-    }
-}
-
-static void ws_send_byte(uint8_t v)
-{
-    for (int i = 7; i >= 0; i--)
-        ws_send_bit((v >> i) & 1u);
+    return ((uint32_t)g << 16) | ((uint32_t)r << 8) | (uint32_t)b;
 }
 
 static void matrix_show(void)
 {
-    uint32_t irq = save_and_disable_interrupts();
     for (int i = 0; i < MATRIX_N; i++)
     {
-        ws_send_byte(leds[i].g);
-        ws_send_byte(leds[i].r);
-        ws_send_byte(leds[i].b);
+        pio_sm_put_blocking(g_pio, g_sm, urgb_u32(leds[i].r, leds[i].g, leds[i].b) << 8u);
     }
-    restore_interrupts(irq);
-    sleep_us(80);
 }
 
 static int map_xy(int x, int y)
@@ -87,9 +68,9 @@ static void set_xy(int x, int y, uint8_t r, uint8_t g, uint8_t b)
 
 void matrix_init(void)
 {
-    gpio_init(MATRIX_PIN);
-    gpio_set_dir(MATRIX_PIN, GPIO_OUT);
-    gpio_put(MATRIX_PIN, 0);
+    uint offset = pio_add_program(g_pio, &ws2812_program);
+    ws2812_program_init(g_pio, g_sm, offset, MATRIX_PIN, 800000, false);
+
     matrix_clear();
     matrix_show();
 }
@@ -97,7 +78,6 @@ void matrix_init(void)
 void matrix_set_pattern(matrix_pattern_t pattern)
 {
     matrix_clear();
-    matrix_show();
 
     if (pattern == MATRIX_PATTERN_TRIGGERED)
     {
