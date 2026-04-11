@@ -86,6 +86,7 @@ void alarm_task(void)
         {
             state = ARMED;
             trigger_type = TRIGGER_NONE;
+            audio_rearm();
         }
         else if (cmd == CONTROL_DISARM)
         {
@@ -121,7 +122,10 @@ void alarm_task(void)
     {
     case DISARMED:
         if (buttons_ok())
+        {
             state = ARMED;
+            audio_rearm();
+        }
         break;
 
     case ARMED:

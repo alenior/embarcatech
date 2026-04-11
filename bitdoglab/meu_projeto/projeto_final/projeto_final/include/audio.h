@@ -5,5 +5,6 @@
 
 void audio_init();
 bool audio_detect();
+void audio_rearm(void);
 
 #endif
