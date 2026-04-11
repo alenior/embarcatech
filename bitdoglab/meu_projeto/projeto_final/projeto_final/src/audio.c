@@ -11,15 +11,15 @@ static bool initialized = false;
 static absolute_time_t last_trigger = {0};
 static absolute_time_t arm_grace_until = {0};
 
-#define SOUND_THRESHOLD_MIN 140
-#define NOISE_MULTIPLIER 4
-#define NOISE_MARGIN 30
-#define TRIGGER_CONSECUTIVE_SAMPLES 3
+#define SOUND_THRESHOLD_MIN 220
+#define NOISE_MULTIPLIER 5
+#define NOISE_MARGIN 50
+#define TRIGGER_CONSECUTIVE_SAMPLES 5
 
-#define COOLDOWN_US 1500000
-#define SAMPLE_INTERVAL_US 5000
-#define BASELINE_SAMPLES 64
-#define ARM_GRACE_US 4000000
+#define COOLDOWN_US 2000000
+#define SAMPLE_INTERVAL_US 8000
+#define BASELINE_SAMPLES 96
+#define ARM_GRACE_US 6000000
 
 void audio_init(void)
 {
@@ -41,22 +41,20 @@ bool audio_detect(void)
 {
     static absolute_time_t last_read = {0};
     static int consecutive_hits = 0;
+    static uint32_t energy_acc = 0;
 
     if (absolute_time_diff_us(last_read, get_absolute_time()) < SAMPLE_INTERVAL_US)
-
         return false;
 
     last_read = get_absolute_time();
 
     if (absolute_time_diff_us(get_absolute_time(), arm_grace_until) > 0)
-
         return false;
 
     adc_select_input(AUDIO_PIN - 26);
 
     uint16_t v = adc_read();
     if (v > 4095)
-
         return false;
 
     if (!initialized)
@@ -78,6 +76,7 @@ bool audio_detect(void)
         baseline = (uint16_t)(sum / BASELINE_SAMPLES);
         noise_floor = (uint16_t)(max_v - min_v);
         consecutive_hits = 0;
+        energy_acc = 0;
         initialized = true;
         return false;
     }
@@ -86,7 +85,6 @@ bool audio_detect(void)
 
     int diff = (int)v - (int)baseline;
     if (diff < 0)
-
         diff = -diff;
 
     noise_floor = (uint16_t)((noise_floor * 31 + (uint16_t)diff) / 32);
@@ -98,18 +96,25 @@ bool audio_detect(void)
     if (diff >= dynamic_threshold)
     {
         consecutive_hits++;
+        energy_acc += (uint32_t)diff;
+
         if (consecutive_hits < TRIGGER_CONSECUTIVE_SAMPLES)
             return false;
-    }
 
-    {
-        if (absolute_time_diff_us(last_trigger, get_absolute_time()) < COOLDOWN_US)
-
+        uint32_t min_energy = (uint32_t)dynamic_threshold * TRIGGER_CONSECUTIVE_SAMPLES;
+        if (energy_acc < min_energy)
             return false;
 
+        if (absolute_time_diff_us(last_trigger, get_absolute_time()) < COOLDOWN_US)
+            return false;
+
+        consecutive_hits = 0;
+        energy_acc = 0;
         last_trigger = get_absolute_time();
         return true;
     }
 
+    consecutive_hits = 0;
+    energy_acc = 0;
     return false;
 }

@@ -2,8 +2,8 @@
 #define CONFIG_H
 
 // WIFI
-#define WIFI_SSID "GCNET-Alencar"
-#define WIFI_PASS "11223344"
+#define WIFI_SSID "Giovanna-4G" // "GCNET-Alencar"
+#define WIFI_PASS "vintelitros" // "11223344"
 
 // FIREBASE
 #define FIREBASE_HOST "projeto-final-5eb42-default-rtdb.firebaseio.com"
