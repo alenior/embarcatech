@@ -134,6 +134,17 @@ static const char *status_text(void)
     return "ALERTA";
 }
 
+static const char *status_code(void)
+{
+    if (state == DISARMED)
+        return "DISARMED";
+
+    if (state == ARMED)
+        return "ARMED";
+
+    return "TRIGGERED";
+}
+
 void alarm_init(void)
 {
     pwm_pin_init(LED_R);
@@ -146,7 +157,7 @@ void alarm_init(void)
     matrix_set_pattern(MATRIX_PATTERN_ARMED);
     update_effects();
     display_set_status(status_text());
-    firebase_set_status(status_text());
+    firebase_set_status(status_text(), status_code());
     firebase_log("ARMADO", "SYSTEM");
 
     printf("Alarm init\n");
@@ -241,7 +252,7 @@ void alarm_task(void)
 
         const char *status = status_text();
         display_set_status(status);
-        firebase_set_status(status);
+        firebase_set_status(status, status_code());
 
         if (state == DISARMED)
         {

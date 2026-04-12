@@ -6,6 +6,6 @@ void firebase_task(void);
 void firebase_fetch_control(void);
 
 void firebase_log(const char *state, const char *event);
-void firebase_set_status(const char *status);
+void firebase_set_status(const char *status, const char *state);
 
 #endif

@@ -211,15 +211,15 @@ void firebase_log(const char *state, const char *event)
     enqueue(json, path);
 }
 
-void firebase_set_status(const char *status)
+void firebase_set_status(const char *status, const char *state)
 {
     char json[192];
     uint32_t ts = get_timestamp_ms();
 
     snprintf(json, sizeof(json),
-             "{\"status\":\"%s\",\"ts\":%u,"
+             "{\"status\":\"%s\",\"state\":\"%s\",\"ts\":%u,"
              "\"device_id\":\"%s\",\"fw_version\":\"%s\",\"wifi_ok\":%s}",
-             status, ts, DEVICE_ID, FW_VERSION, wifi_is_connected() ? "true" : "false");
+             status, state, ts, DEVICE_ID, FW_VERSION, wifi_is_connected() ? "true" : "false");
 
     enqueue(json, FB_STATUS_PATH);
 }
